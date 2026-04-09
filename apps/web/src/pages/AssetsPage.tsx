@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 
 type Category = { id: string; code: string; name: string };
@@ -28,6 +28,8 @@ export function AssetsPage() {
     queryKey: ["assets"],
     queryFn: () => api<Asset[]>("/api/assets"),
   });
+
+  const [assetToDelete, setAssetToDelete] = useState<Asset | null>(null);
 
   const [form, setForm] = useState({
     acquisitionDate: new Date().toISOString().slice(0, 10),
@@ -59,8 +61,20 @@ export function AssetsPage() {
 
   const remove = useMutation({
     mutationFn: (id: string) => api(`/api/assets/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["assets"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assets"] });
+      setAssetToDelete(null);
+    },
   });
+
+  useEffect(() => {
+    if (!assetToDelete) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAssetToDelete(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [assetToDelete]);
 
   return (
     <div className="space-y-6">
@@ -208,7 +222,8 @@ export function AssetsPage() {
                     type="button"
                     className="text-xs text-red-600 hover:underline"
                     onClick={() => {
-                      if (confirm("¿Eliminar activo?")) remove.mutate(a.id);
+                      remove.reset();
+                      setAssetToDelete(a);
                     }}
                   >
                     Eliminar
@@ -223,6 +238,49 @@ export function AssetsPage() {
           <p className="p-4 text-sm text-slate-500">No hay activos aún.</p>
         )}
       </section>
+
+      {assetToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="presentation"
+          onClick={() => setAssetToDelete(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-asset-title"
+            className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-asset-title" className="text-sm font-semibold text-slate-900">
+              Eliminar activo
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              ¿Eliminar el activo «{assetToDelete.description}»? Esta acción no se puede deshacer.
+            </p>
+            {remove.isError && (
+              <p className="mt-2 text-sm text-red-600">{(remove.error as Error).message}</p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => setAssetToDelete(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={remove.isPending}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                onClick={() => remove.mutate(assetToDelete.id)}
+              >
+                {remove.isPending ? "Eliminando…" : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
