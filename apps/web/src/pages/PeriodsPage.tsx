@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { adminHeaders, api } from "../api";
-import { formatClpInteger } from "../formatCurrency";
+import { formatClpInteger, parseDecimalStringToRoundedBigInt } from "../formatCurrency";
 
 type Period = {
   id: string;
@@ -35,11 +35,22 @@ export function PeriodsPage() {
     queryFn: () => api<Period[]>("/api/periods"),
   });
 
-  const { data: snapshots = [] } = useQuery({
+  const { data: snapshots = [], isPending: snapshotsPending } = useQuery({
     queryKey: ["snapshots", selectedId],
     queryFn: () => api<SnapshotRow[]>(`/api/periods/${selectedId}/snapshots`),
     enabled: Boolean(selectedId),
   });
+
+  const depreciationEntryTotal = useMemo(() => {
+    let sum = 0n;
+    for (const s of snapshots) {
+      const n = parseDecimalStringToRoundedBigInt(s.depreciationForPeriod);
+      if (n !== null) sum += n;
+    }
+    return sum;
+  }, [snapshots]);
+
+  const entryAmountLabel = snapshotsPending ? "…" : formatClpInteger(String(depreciationEntryTotal));
 
   const runClose = useMutation({
     mutationFn: () =>
@@ -214,6 +225,36 @@ export function PeriodsPage() {
               Cerrar
             </button>
           </div>
+          <div className="border-b border-slate-100 bg-slate-50 px-3 py-3">
+            <p className="text-xs font-semibold text-slate-700">Resumen del asiento</p>
+            <table className="mt-2 w-full max-w-2xl border-collapse text-xs text-slate-800">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="py-1.5 pr-2 text-left font-normal" aria-hidden="true" />
+                  <th className="py-1.5 text-left font-normal" aria-hidden="true" />
+                  <th className="w-[1%] whitespace-nowrap py-1.5 px-3 text-right font-semibold lowercase">debe</th>
+                  <th className="w-[1%] whitespace-nowrap py-1.5 pl-3 text-right font-semibold lowercase">haber</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="py-1 pr-2">Gasto depreciación</td>
+                  <td className="py-1" />
+                  <td className="px-3 py-1 text-right tabular-nums">{entryAmountLabel}</td>
+                  <td className="py-1 pl-3 text-right tabular-nums" />
+                </tr>
+                <tr>
+                  <td className="py-1 pr-2">Depreciación acumulada</td>
+                  <td className="py-1" />
+                  <td className="px-3 py-1 text-right tabular-nums" />
+                  <td className="py-1 pl-3 text-right tabular-nums">{entryAmountLabel}</td>
+                </tr>
+              </tbody>
+            </table>
+            {!snapshotsPending && snapshots.length === 0 && (
+              <p className="mt-2 text-xs text-slate-500">Sin depreciación en este período (auxiliar vacío).</p>
+            )}
+          </div>
           <table className="min-w-full text-left text-xs">
             <thead className="bg-slate-100 font-semibold uppercase text-slate-600">
               <tr>
@@ -228,18 +269,26 @@ export function PeriodsPage() {
               </tr>
             </thead>
             <tbody>
-              {snapshots.map((s) => (
-                <tr key={s.id} className="border-t border-slate-100">
-                  <td className="max-w-xs truncate px-2 py-2">{s.asset.description}</td>
-                  <td className="px-2 py-2 text-right font-mono">{s.cmFactor}</td>
-                  <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.updatedGrossValue)}</td>
-                  <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.depreciationForPeriod)}</td>
-                  <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.accumulatedDepreciation)}</td>
-                  <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.netBookValue)}</td>
-                  <td className="px-2 py-2 text-right">{s.asset.category.acceleratedLifeMonths}</td>
-                  <td className="px-2 py-2">{s.monthsRemainingInYear}</td>
+              {snapshotsPending && (
+                <tr className="border-t border-slate-100">
+                  <td colSpan={8} className="px-2 py-6 text-center text-slate-500">
+                    Cargando auxiliar…
+                  </td>
                 </tr>
-              ))}
+              )}
+              {!snapshotsPending &&
+                snapshots.map((s) => (
+                  <tr key={s.id} className="border-t border-slate-100">
+                    <td className="max-w-xs truncate px-2 py-2">{s.asset.description}</td>
+                    <td className="px-2 py-2 text-right font-mono">{s.cmFactor}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.updatedGrossValue)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.depreciationForPeriod)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.accumulatedDepreciation)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.netBookValue)}</td>
+                    <td className="px-2 py-2 text-right">{s.asset.category.acceleratedLifeMonths}</td>
+                    <td className="px-2 py-2">{s.monthsRemainingInYear}</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </section>
