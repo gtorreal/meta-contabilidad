@@ -21,6 +21,19 @@ function serializeAsset(a: Record<string, unknown>) {
   };
 }
 
+/** null/undefined = usar catálogo según régimen; número = debe coincidir con normal o acelerada. */
+function usefulLifeErrorForCategory(
+  category: { normalLifeMonths: number; acceleratedLifeMonths: number },
+  usefulLifeMonths: number | null | undefined,
+): string | null {
+  if (usefulLifeMonths == null) return null;
+  const ok =
+    usefulLifeMonths === category.normalLifeMonths ||
+    usefulLifeMonths === category.acceleratedLifeMonths;
+  if (ok) return null;
+  return "La vida útil debe ser la normal o la acelerada de la categoría elegida.";
+}
+
 assetsRoute.get("/", async (c) => {
   const rows = await prisma.asset.findMany({
     include: { category: true },
@@ -67,6 +80,17 @@ assetsRoute.post("/", async (c) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error de conversión";
     return c.json({ error: msg }, 400);
+  }
+
+  const category = await prisma.usefulLifeCategory.findUnique({
+    where: { id: body.data.categoryId },
+  });
+  if (!category) {
+    return c.json({ error: "Categoría no encontrada" }, 400);
+  }
+  const lifeErr = usefulLifeErrorForCategory(category, body.data.usefulLifeMonths);
+  if (lifeErr) {
+    return c.json({ error: lifeErr }, 400);
   }
 
   try {
@@ -135,6 +159,20 @@ assetsRoute.patch("/:id", async (c) => {
       });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : "Error de conversión" }, 400);
+    }
+  }
+
+  const effectiveCategoryId = data.categoryId ?? existing.categoryId;
+  if (data.usefulLifeMonths !== undefined) {
+    const categoryForLife = await prisma.usefulLifeCategory.findUnique({
+      where: { id: effectiveCategoryId },
+    });
+    if (!categoryForLife) {
+      return c.json({ error: "Categoría no encontrada" }, 400);
+    }
+    const patchLifeErr = usefulLifeErrorForCategory(categoryForLife, data.usefulLifeMonths);
+    if (patchLifeErr) {
+      return c.json({ error: patchLifeErr }, 400);
     }
   }
 

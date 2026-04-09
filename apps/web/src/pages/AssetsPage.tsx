@@ -3,7 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { formatClpInteger, formatUsdInteger } from "../formatCurrency";
 
-type Category = { id: string; code: string; name: string; normalLifeMonths: number };
+type Category = {
+  id: string;
+  code: string;
+  name: string;
+  normalLifeMonths: number;
+  acceleratedLifeMonths: number;
+};
 type Asset = {
   id: string;
   acquisitionDate: string;
@@ -52,6 +58,23 @@ export function AssetsPage() {
 
   const defaultCategoryId = useMemo(() => categories[0]?.id ?? "", [categories]);
 
+  const selectedCategory = useMemo(() => {
+    const cid = form.categoryId || defaultCategoryId;
+    return categories.find((c) => c.id === cid) ?? null;
+  }, [categories, form.categoryId, defaultCategoryId]);
+
+  const usefulLifeOptions = useMemo(() => {
+    if (!selectedCategory) return [];
+    const { normalLifeMonths: n, acceleratedLifeMonths: a } = selectedCategory;
+    if (n === a) {
+      return [{ value: String(n), label: `Normal (${n} meses)` }];
+    }
+    return [
+      { value: String(n), label: `Normal (${n} meses)` },
+      { value: String(a), label: `Acelerada (${a} meses)` },
+    ];
+  }, [selectedCategory]);
+
   useEffect(() => {
     if (!categories.length) return;
     setForm((f) => {
@@ -61,6 +84,15 @@ export function AssetsPage() {
       return { ...f, usefulLifeMonths: String(cat.normalLifeMonths) };
     });
   }, [categories]);
+
+  useEffect(() => {
+    if (!selectedCategory || !usefulLifeOptions.length) return;
+    const allowed = new Set(usefulLifeOptions.map((o) => o.value));
+    setForm((f) => {
+      if (allowed.has(f.usefulLifeMonths)) return f;
+      return { ...f, usefulLifeMonths: String(selectedCategory.normalLifeMonths) };
+    });
+  }, [selectedCategory, usefulLifeOptions]);
 
   const create = useMutation({
     mutationFn: () => {
@@ -155,15 +187,18 @@ export function AssetsPage() {
           </label>
           <label className="text-xs font-medium text-slate-600">
             Vida útil (meses)
-            <input
-              type="number"
-              min={1}
-              max={600}
+            <select
               required
               className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
               value={form.usefulLifeMonths}
               onChange={(e) => setForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
-            />
+            >
+              {usefulLifeOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="text-xs font-medium text-slate-600">
             Moneda
