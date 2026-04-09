@@ -12,8 +12,8 @@
 
 ## Cómo arrancar en local
 
-1. `cp .env.example .env` y ajustar si hace falta.
-2. `docker compose up -d postgres`
+1. `cp .env.example .env` y ajustar `DATABASE_URL` (usuario Postgres local o `meta:meta` en puerto 5433 con Docker).
+2. Opción A: `docker compose up -d postgres`. Opción B: Postgres local y `createdb meta_contabilidad` (o equivalente).
 3. `pnpm install` en la raíz
 4. `pnpm db:generate && pnpm --filter @meta-contabilidad/api exec prisma migrate deploy`
 5. `pnpm --filter @meta-contabilidad/api prisma:seed`

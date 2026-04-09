@@ -6,19 +6,23 @@ MVP local para **activos fijos**: maestro único por bien, índices económicos 
 
 - Node.js 20+
 - pnpm 9+
-- Docker (PostgreSQL)
+- PostgreSQL (Docker Compose en puerto **5433** o instalación local en **5432**)
 
 ## Arranque
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres
+# Edita DATABASE_URL. Luego, o bien:
+# docker compose up -d postgres
+# o bien: createdb meta_contabilidad (Postgres local)
 pnpm install
 pnpm db:generate
 pnpm --filter @meta-contabilidad/api exec prisma migrate deploy
 pnpm --filter @meta-contabilidad/api prisma:seed
 pnpm dev
 ```
+
+La API carga `.env` desde la raíz del monorepo o desde `apps/api/`.
 
 - API: `http://localhost:8787`
 - Web: `http://localhost:5173` (proxy a `/api`)
