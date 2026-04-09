@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { adminHeaders, api } from "../api";
+import { formatClpInteger } from "../formatCurrency";
 
 type Period = {
   id: string;
@@ -231,10 +232,10 @@ export function PeriodsPage() {
                 <tr key={s.id} className="border-t border-slate-100">
                   <td className="max-w-xs truncate px-2 py-2">{s.asset.description}</td>
                   <td className="px-2 py-2 text-right font-mono">{s.cmFactor}</td>
-                  <td className="px-2 py-2 text-right font-mono">{s.updatedGrossValue}</td>
-                  <td className="px-2 py-2 text-right font-mono">{s.depreciationForPeriod}</td>
-                  <td className="px-2 py-2 text-right font-mono">{s.accumulatedDepreciation}</td>
-                  <td className="px-2 py-2 text-right font-mono">{s.netBookValue}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.updatedGrossValue)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.depreciationForPeriod)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.accumulatedDepreciation)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.netBookValue)}</td>
                   <td className="px-2 py-2 text-right">{s.asset.category.acceleratedLifeMonths}</td>
                   <td className="px-2 py-2">{s.monthsRemainingInYear}</td>
                 </tr>

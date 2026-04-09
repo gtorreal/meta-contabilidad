@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { adminHeaders, api } from "../api";
+import { formatClpInteger, formatIpcInteger } from "../formatCurrency";
 
 type IndexRow = { id: string; type: string; date: string; value: string };
 
@@ -212,7 +213,9 @@ export function IndicesPage() {
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-mono text-xs">{String(r.date).slice(0, 10)}</td>
-                <td className="px-3 py-2 text-right font-mono text-xs">{r.value}</td>
+                <td className="px-3 py-2 text-right text-xs tabular-nums">
+                  {type === "IPC" ? formatIpcInteger(r.value) : formatClpInteger(r.value)}
+                </td>
                 {type === "IPC" && (
                   <td className="px-3 py-2 text-right">
                     <button

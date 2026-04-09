@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { formatClpInteger, formatUsdInteger } from "../formatCurrency";
 
 type Category = { id: string; code: string; name: string; normalLifeMonths: number };
 type Asset = {
@@ -276,11 +277,15 @@ export function AssetsPage() {
                 <td className="max-w-xs truncate px-3 py-2">{a.description}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-slate-600">{a.category?.code}</td>
                 <td className="px-3 py-2">{a.acquisitionCurrency}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-xs">
-                  {a.acquisitionAmountOriginal}
+                <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
+                  {a.acquisitionCurrency === "USD"
+                    ? formatUsdInteger(a.acquisitionAmountOriginal)
+                    : a.acquisitionCurrency === "CLP"
+                      ? formatClpInteger(a.acquisitionAmountOriginal)
+                      : a.acquisitionAmountOriginal}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-xs">
-                  {a.historicalValueClp}
+                <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
+                  {formatClpInteger(a.historicalValueClp)}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right text-slate-600">
                   {a.usefulLifeMonths ?? "—"}
