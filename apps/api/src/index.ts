@@ -10,6 +10,15 @@ import { periodsRoute } from "./routes/periods.js";
 
 const app = new Hono();
 
+app.onError((err, c) => {
+  console.error(err);
+  const message =
+    err instanceof Error ? err.message : typeof err === "string" ? err : "Error interno del servidor";
+  return c.json({ error: message }, 500);
+});
+
+app.notFound((c) => c.json({ error: `No encontrado: ${c.req.path}` }, 404));
+
 app.use(
   "*",
   cors({
