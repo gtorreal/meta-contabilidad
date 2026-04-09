@@ -11,6 +11,10 @@
     "test": "pnpm run -r test",
     "db:up": "docker compose up -d postgres",
     "db:generate": "pnpm --filter @meta-contabilidad/api prisma:generate",
-    "db:migrate": "pnpm --filter @meta-contabilidad/api prisma:migrate"
+    "db:migrate": "dotenv -e .env -- pnpm --filter @meta-contabilidad/api exec prisma migrate deploy",
+    "db:migrate:dev": "dotenv -e .env -- pnpm --filter @meta-contabilidad/api exec prisma migrate dev"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^8.0.0"
   }
 }
