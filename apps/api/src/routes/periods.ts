@@ -3,16 +3,31 @@ import { periodReopenSchema, runCloseMonthSchema } from "@meta-contabilidad/shar
 import { prisma } from "../db.js";
 import { decToString } from "../serialize.js";
 import { requireAdmin } from "../middleware/admin.js";
-import { runCloseMonthForPeriod } from "../services/close-month.js";
+import {
+  countEligibleAssetsForPeriod,
+  countEligibleFromAssetRows,
+  runCloseMonthForPeriod,
+} from "../services/close-month.js";
 
 export const periodsRoute = new Hono();
 
 periodsRoute.get("/", async (c) => {
-  const rows = await prisma.accountingPeriod.findMany({
-    orderBy: [{ year: "desc" }, { month: "desc" }],
-    include: { _count: { select: { snapshots: true } } },
-  });
-  return c.json(rows);
+  const [rows, activeAssets] = await Promise.all([
+    prisma.accountingPeriod.findMany({
+      orderBy: [{ year: "desc" }, { month: "desc" }],
+      include: { _count: { select: { snapshots: true } } },
+    }),
+    prisma.asset.findMany({
+      where: { status: "ACTIVE" },
+      select: { acquisitionDate: true, disposedAt: true },
+    }),
+  ]);
+  return c.json(
+    rows.map((p) => ({
+      ...p,
+      eligibleAssetCount: countEligibleFromAssetRows(activeAssets, p.year, p.month),
+    })),
+  );
 });
 
 periodsRoute.post("/run-close", async (c) => {
@@ -35,6 +50,19 @@ periodsRoute.post("/:id/close", async (c) => {
   if (period.status === "CLOSED") {
     return c.json({ error: "Ya está cerrado" }, 409);
   }
+  const [snapshotCount, eligibleCount] = await Promise.all([
+    prisma.assetPeriodSnapshot.count({ where: { periodId: id } }),
+    countEligibleAssetsForPeriod(period.year, period.month),
+  ]);
+  if (eligibleCount > 0 && snapshotCount === 0) {
+    return c.json(
+      {
+        error:
+          "Hay activos elegibles pero aún no hay snapshots. Ejecute primero «Calcular snapshots» (POST /api/periods/run-close) para este año y mes.",
+      },
+      409,
+    );
+  }
   const admin = await prisma.user.findFirst({ where: { role: "ADMIN" } });
   const updated = await prisma.accountingPeriod.update({
     where: { id },
@@ -45,6 +73,23 @@ periodsRoute.post("/:id/close", async (c) => {
     },
   });
   return c.json(updated);
+});
+
+periodsRoute.delete("/:id", async (c) => {
+  const id = c.req.param("id");
+  const period = await prisma.accountingPeriod.findUnique({ where: { id } });
+  if (!period) return c.json({ error: "No encontrado" }, 404);
+  if (period.status === "CLOSED") {
+    return c.json(
+      {
+        error:
+          "No se puede eliminar un período cerrado. Reábralo con Admin (X-Admin-Key) y luego elimínelo mientras esté abierto.",
+      },
+      409,
+    );
+  }
+  await prisma.accountingPeriod.delete({ where: { id } });
+  return c.body(null, 204);
 });
 
 periodsRoute.post("/:id/reopen", requireAdmin, async (c) => {

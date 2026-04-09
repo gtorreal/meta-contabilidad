@@ -9,6 +9,7 @@ type Period = {
   month: number;
   status: string;
   _count: { snapshots: number };
+  eligibleAssetCount: number;
 };
 
 type SnapshotRow = {
@@ -67,6 +68,14 @@ export function PeriodsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["periods"] }),
   });
 
+  const deletePeriod = useMutation({
+    mutationFn: (id: string) => api(`/api/periods/${id}`, { method: "DELETE" }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["periods"] });
+      setSelectedId((cur) => (cur === id ? null : cur));
+    },
+  });
+
   const reopen = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       api(`/api/periods/${id}/reopen`, {
@@ -86,8 +95,10 @@ export function PeriodsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Períodos y cierre</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Ejecutar cierre calcula snapshots (CM por IPC, depreciación lineal). Cerrar período lo deja inmutable;
-          reapertura solo con <code className="rounded bg-slate-100 px-1">X-Admin-Key</code> (ver{" "}
+          Orden recomendado: primero <span className="font-medium">Calcular snapshots</span> (año/mes del
+          período), luego <span className="font-medium">Cerrar período</span>. Eso genera el auxiliar (CM por IPC y
+          depreciación lineal); al cerrar el período queda inmutable. Reapertura solo con{" "}
+          <code className="rounded bg-slate-100 px-1">X-Admin-Key</code> (ver{" "}
           <code className="rounded bg-slate-100 px-1">VITE_ADMIN_API_KEY</code>).
         </p>
       </div>
@@ -159,19 +170,61 @@ export function PeriodsPage() {
                     Ver auxiliar
                   </button>
                   {p.status === "OPEN" && (
-                    <button
-                      type="button"
-                      className="text-xs text-amber-700 underline"
-                      onClick={() => closePeriod.mutate(p.id)}
-                    >
-                      Cerrar período
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        disabled={
+                          closePeriod.isPending ||
+                          (p.eligibleAssetCount > 0 && p._count.snapshots === 0)
+                        }
+                        title={
+                          p.eligibleAssetCount > 0 && p._count.snapshots === 0
+                            ? "Ejecute primero «Calcular snapshots» con el año y mes de esta fila."
+                            : undefined
+                        }
+                        className="text-xs text-amber-700 underline disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => closePeriod.mutate(p.id)}
+                      >
+                        Cerrar período
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletePeriod.isPending}
+                        className="text-xs text-red-700 underline disabled:opacity-50"
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `¿Eliminar el período ${p.year}-${String(p.month).padStart(2, "0")}? Se borrarán sus snapshots si los hubiera.`,
+                            )
+                          ) {
+                            return;
+                          }
+                          deletePeriod.mutate(p.id);
+                        }}
+                      >
+                        Eliminar
+                      </button>
+                    </>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        <p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">
+          Puede eliminar filas de períodos <span className="font-medium">abiertos</span> (p. ej. meses que no
+          usará). Un período cerrado hay que reabrirlo con Admin antes de poder eliminarlo.
+        </p>
+        {closePeriod.error && (
+          <p className="border-t border-slate-100 px-3 py-2 text-sm text-red-600">
+            {(closePeriod.error as Error).message}
+          </p>
+        )}
+        {deletePeriod.error && (
+          <p className="border-t border-slate-100 px-3 py-2 text-sm text-red-600">
+            {(deletePeriod.error as Error).message}
+          </p>
+        )}
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
