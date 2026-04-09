@@ -1,0 +1,16 @@
+{
+  "name": "meta-contabilidad",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @meta-contabilidad/shared build && pnpm run --parallel dev:api dev:web",
+    "dev:api": "pnpm --filter @meta-contabilidad/api dev",
+    "dev:web": "pnpm --filter @meta-contabilidad/web dev",
+    "build": "pnpm run -r build",
+    "lint": "pnpm run -r lint",
+    "test": "pnpm run -r test",
+    "db:up": "docker compose up -d postgres",
+    "db:generate": "pnpm --filter @meta-contabilidad/api prisma:generate",
+    "db:migrate": "pnpm --filter @meta-contabilidad/api prisma:migrate"
+  }
+}

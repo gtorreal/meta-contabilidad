@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EconomicIndexType {
+  USD_OBSERVED
+  UF
+  IPC
+}
+
+enum AssetCurrency {
+  CLP
+  USD
+  EUR
+  OTHER
+}
+
+enum AssetStatus {
+  ACTIVE
+  DISPOSED
+  TRANSFERRED
+  UNDER_REVIEW
+}
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+model User {
+  id             String               @id @default(uuid())
+  email          String?              @unique
+  role           UserRole             @default(USER)
+  createdAt      DateTime             @default(now())
+  assetsCreated  Asset[]              @relation("AssetCreatedBy")
+  periodsClosed  AccountingPeriod[]   @relation("PeriodClosedBy")
+  auditLogs      AuditLog[]
+}
+
+model EconomicIndex {
+  id        String            @id @default(uuid())
+  type      EconomicIndexType
+  date      DateTime          @db.Date
+  value     Decimal           @db.Decimal(24, 8)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([type, date])
+  @@index([type, date])
+}
+
+model UsefulLifeCategory {
+  id                    String  @id @default(uuid())
+  code                  String  @unique
+  name                  String
+  normalLifeMonths      Int
+  acceleratedLifeMonths Int
+  assets                Asset[]
+}
+
+model AccountingPeriod {
+  id         String       @id @default(uuid())
+  year       Int
+  month      Int
+  status     PeriodStatus @default(OPEN)
+  closedAt   DateTime?
+  closedById String?
+  closedBy   User?        @relation("PeriodClosedBy", fields: [closedById], references: [id])
+  snapshots  AssetPeriodSnapshot[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([year, month])
+}
+
+model Asset {
+  id                      String             @id @default(uuid())
+  acquisitionDate       DateTime           @db.Date
+  invoiceNumber           String?
+  description             String
+  categoryId              String
+  category                UsefulLifeCategory @relation(fields: [categoryId], references: [id])
+  acquisitionCurrency     AssetCurrency
+  acquisitionAmountOriginal Decimal          @db.Decimal(24, 4)
+  historicalValueClp      Decimal            @db.Decimal(24, 2)
+  creditAfPercent         Decimal?           @db.Decimal(7, 4)
+  acceleratedDepreciation Boolean            @default(false)
+  status                  AssetStatus        @default(ACTIVE)
+  disposedAt              DateTime?          @db.Date
+  disposalReason          String?
+  odooAssetRef            String?
+  odooMoveRef             String?
+  createdById             String?
+  createdBy               User?              @relation("AssetCreatedBy", fields: [createdById], references: [id])
+  attachments             Attachment[]
+  snapshots               AssetPeriodSnapshot[]
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  @@index([status])
+  @@index([acquisitionDate])
+}
+
+model AssetPeriodSnapshot {
+  id                      String             @id @default(uuid())
+  assetId                 String
+  asset                   Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  periodId                String
+  period                  AccountingPeriod   @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  cmFactor                Decimal            @db.Decimal(24, 10)
+  updatedGrossValue       Decimal            @db.Decimal(24, 2)
+  depHistorical           Decimal            @db.Decimal(24, 2)
+  depCmAdjustment         Decimal            @db.Decimal(24, 2)
+  depUpdated              Decimal            @db.Decimal(24, 2)
+  netToDepreciate         Decimal            @db.Decimal(24, 2)
+  monthsRemainingInYear   Int
+  depreciationForPeriod   Decimal            @db.Decimal(24, 2)
+  accumulatedDepreciation Decimal            @db.Decimal(24, 2)
+  netBookValue            Decimal            @db.Decimal(24, 2)
+  createdAt               DateTime           @default(now())
+
+  @@unique([assetId, periodId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  reason     String?
+  metadata   Json?
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Attachment {
+  id          String   @id @default(uuid())
+  assetId     String
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  filename    String
+  mimeType    String
+  storagePath String
+  createdAt   DateTime @default(now())
+}
