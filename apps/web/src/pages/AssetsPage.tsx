@@ -25,10 +25,15 @@ export function AssetsPage() {
     queryKey: ["categories"],
     queryFn: () => api<Category[]>("/api/categories"),
   });
-  const { data: assets = [], error } = useQuery({
+  const {
+    data: assetsRaw,
+    error: assetsError,
+    isPending: assetsPending,
+  } = useQuery({
     queryKey: ["assets"],
     queryFn: () => api<Asset[]>("/api/assets"),
   });
+  const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 
   const [assetToDelete, setAssetToDelete] = useState<Asset | null>(null);
 
@@ -57,21 +62,26 @@ export function AssetsPage() {
   }, [categories]);
 
   const create = useMutation({
-    mutationFn: () =>
-      api<Asset>("/api/assets", {
+    mutationFn: () => {
+      const usefulLifeMonthsParsed = parseInt(form.usefulLifeMonths, 10);
+      return api<Asset>("/api/assets", {
         method: "POST",
         body: JSON.stringify({
-          ...form,
+          acquisitionDate: form.acquisitionDate,
+          description: form.description,
           categoryId: form.categoryId || defaultCategoryId,
-          invoiceNumber: form.invoiceNumber || null,
-          odooAssetRef: form.odooAssetRef || null,
-          odooMoveRef: form.odooMoveRef || null,
-          usefulLifeMonths: (() => {
-            const n = parseInt(form.usefulLifeMonths, 10);
-            return Number.isFinite(n) && n > 0 ? n : null;
-          })(),
+          acquisitionCurrency: form.acquisitionCurrency,
+          acquisitionAmountOriginal: form.acquisitionAmountOriginal,
+          invoiceNumber: form.invoiceNumber.trim() === "" ? null : form.invoiceNumber,
+          odooAssetRef: form.odooAssetRef.trim() === "" ? null : form.odooAssetRef,
+          odooMoveRef: form.odooMoveRef.trim() === "" ? null : form.odooMoveRef,
+          usefulLifeMonths:
+            Number.isFinite(usefulLifeMonthsParsed) && usefulLifeMonthsParsed > 0
+              ? usefulLifeMonthsParsed
+              : null,
         }),
-      }),
+      });
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["assets"] }),
   });
 
@@ -224,6 +234,15 @@ export function AssetsPage() {
       </section>
 
       <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        {assetsError && (
+          <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {(assetsError as Error).message}
+            <span className="mt-1 block text-xs text-red-600/90">
+              Si actualizaste el repo, asegurate de correr la migración:{" "}
+              <code className="rounded bg-red-100/80 px-1">pnpm db:migrate</code>
+            </span>
+          </p>
+        )}
         <table className="min-w-full text-left text-sm">
           <thead className="bg-slate-100 text-xs font-semibold uppercase text-slate-600">
             <tr>
@@ -239,10 +258,20 @@ export function AssetsPage() {
             </tr>
           </thead>
           <tbody>
-            {assets.map((a) => (
+            {assetsPending && (
+              <tr className="border-t border-slate-100">
+                <td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-500">
+                  Cargando activos…
+                </td>
+              </tr>
+            )}
+            {!assetsPending &&
+              assets.map((a) => (
               <tr key={a.id} className="border-t border-slate-100">
                 <td className="whitespace-nowrap px-3 py-2 text-slate-700">
-                  {a.acquisitionDate.slice(0, 10)}
+                  {typeof a.acquisitionDate === "string"
+                    ? a.acquisitionDate.slice(0, 10)
+                    : ""}
                 </td>
                 <td className="max-w-xs truncate px-3 py-2">{a.description}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-slate-600">{a.category?.code}</td>
@@ -273,8 +302,7 @@ export function AssetsPage() {
             ))}
           </tbody>
         </table>
-        {error && <p className="p-3 text-sm text-red-600">{(error as Error).message}</p>}
-        {!assets.length && !error && (
+        {!assetsPending && !assets.length && !assetsError && (
           <p className="p-4 text-sm text-slate-500">No hay activos aún.</p>
         )}
       </section>
