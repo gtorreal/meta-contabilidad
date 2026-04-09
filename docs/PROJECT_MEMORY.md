@@ -20,3 +20,15 @@
 6. `pnpm dev` (API en 8787, web en 5173 con proxy `/api`).
 
 Para reapertura de períodos desde el navegador, definir en `apps/web` `VITE_ADMIN_API_KEY` igual a `ADMIN_API_KEY` del API.
+
+## Importar Excel Budacom (activos + snapshots mensuales)
+
+Desde la raíz, con `DATABASE_URL` cargado (`.env`):
+
+```bash
+pnpm --filter @meta-contabilidad/api import:budacom "/ruta/al/archivo.xlsx"
+```
+
+Por defecto usa `~/Downloads/Activo fijo Financiero Budacom 2025.xlsx` si no pasas ruta.
+
+El script **borra** activos, períodos y snapshots existentes, actualiza la categoría `EQ_COMP` a 72/24 meses (ítem 23 SII), lee **Apertura** y todas las hojas `YYYY_MM`, crea un activo por cada clave única (fecha + descripción + Nº factura) y carga los valores de cada mes en `AssetPeriodSnapshot` tal como vienen en el Excel (CM, depreciaciones, neto, etc.).
