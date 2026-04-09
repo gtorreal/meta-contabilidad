@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { decToString } from "../serialize.js";
 import { resolveHistoricalValueClp } from "../services/fx.js";
 import { assertAssetEditable } from "../services/period-guard.js";
+import { usefulLifeErrorForCategory } from "../services/useful-life-for-category.js";
 
 export const assetsRoute = new Hono();
 
@@ -19,19 +20,6 @@ function serializeAsset(a: Record<string, unknown>) {
     historicalValueClp: decToString(a.historicalValueClp as never),
     creditAfPercent: decToString(a.creditAfPercent as never),
   };
-}
-
-/** null/undefined = usar catálogo según régimen; número = debe coincidir con normal o acelerada. */
-function usefulLifeErrorForCategory(
-  category: { normalLifeMonths: number; acceleratedLifeMonths: number },
-  usefulLifeMonths: number | null | undefined,
-): string | null {
-  if (usefulLifeMonths == null) return null;
-  const ok =
-    usefulLifeMonths === category.normalLifeMonths ||
-    usefulLifeMonths === category.acceleratedLifeMonths;
-  if (ok) return null;
-  return "La vida útil debe ser la normal o la acelerada de la categoría elegida.";
 }
 
 assetsRoute.get("/", async (c) => {
