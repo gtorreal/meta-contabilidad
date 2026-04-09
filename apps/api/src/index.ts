@@ -1,9 +1,5 @@
-import path from "node:path";
-import { config as loadEnv } from "dotenv";
+import "./env.js";
 import { serve } from "@hono/node-server";
-
-loadEnv({ path: path.resolve(process.cwd(), ".env") });
-loadEnv({ path: path.resolve(process.cwd(), "..", ".env") });
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";

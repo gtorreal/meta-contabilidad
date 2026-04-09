@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "dev": "pnpm --filter @meta-contabilidad/shared build && pnpm run --parallel dev:api dev:web",
+    "dev": "pnpm --filter @meta-contabilidad/shared build && pnpm --parallel --filter @meta-contabilidad/api --filter @meta-contabilidad/web run dev",
     "dev:api": "pnpm --filter @meta-contabilidad/api dev",
     "dev:web": "pnpm --filter @meta-contabilidad/web dev",
     "build": "pnpm run -r build",
