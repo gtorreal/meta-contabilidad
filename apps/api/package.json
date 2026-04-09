@@ -13,12 +13,14 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
     "prisma:studio": "prisma studio",
-    "import:budacom": "tsx scripts/import-budacom-xlsx.ts"
+    "import:budacom": "tsx scripts/import-budacom-xlsx.ts",
+    "import:sii": "tsx scripts/import-sii-indices.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "@meta-contabilidad/shared": "workspace:*",
     "@prisma/client": "^6.2.1",
+    "cheerio": "^1.0.0",
     "decimal.js": "^10.4.3",
     "dotenv": "^17.4.1",
     "hono": "^4.6.14",

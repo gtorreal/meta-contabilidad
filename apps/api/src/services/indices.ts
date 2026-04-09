@@ -40,6 +40,25 @@ export async function requireUsdObservedOnDate(date: Date) {
   return row;
 }
 
+export async function getUfOnDate(date: Date) {
+  const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  return prisma.economicIndex.findUnique({
+    where: {
+      type_date: { type: "UF", date: day },
+    },
+  });
+}
+
+export async function requireUfOnDate(date: Date) {
+  const row = await getUfOnDate(date);
+  if (!row) {
+    throw new Error(
+      `No hay UF para la fecha ${date.toISOString().slice(0, 10)}. Cargue la serie en Índices económicos.`,
+    );
+  }
+  return row;
+}
+
 export async function listIndices(type: EconomicIndexType, from?: Date, to?: Date) {
   return prisma.economicIndex.findMany({
     where: {
