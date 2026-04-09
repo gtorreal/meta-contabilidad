@@ -22,6 +22,25 @@ function monthsRemainingInCalendarYear(periodMonth: number): number {
 
 type AssetWithCategory = Asset & { category: UsefulLifeCategory };
 
+/** Meses de vida útil aplicados al cálculo: override del activo o catálogo según régimen. */
+export function effectiveUsefulLifeMonths(asset: AssetWithCategory): number {
+  if (asset.usefulLifeMonths != null) return asset.usefulLifeMonths;
+  return asset.acceleratedDepreciation
+    ? asset.category.acceleratedLifeMonths
+    : asset.category.normalLifeMonths;
+}
+
+function monthsRemainingInYearForSnapshot(
+  periodMonth: number,
+  lifeMonths: number,
+  monthsHeldUncapped: number,
+): number {
+  const calendarRemaining = monthsRemainingInCalendarYear(periodMonth);
+  const elapsed = Math.min(monthsHeldUncapped, lifeMonths);
+  const remainingLife = Math.max(0, lifeMonths - elapsed);
+  return Math.min(calendarRemaining, remainingLife);
+}
+
 async function findPreviousSnapshot(assetId: string, year: number, month: number) {
   const rows = await prisma.assetPeriodSnapshot.findMany({
     where: { assetId },
@@ -79,12 +98,16 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
     const f = new Decimal(factor);
     const updatedGross = historical.mul(f).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-    const lifeMonths = asset.acceleratedDepreciation
-      ? asset.category.acceleratedLifeMonths
-      : asset.category.normalLifeMonths;
-
-    let monthsHeld = monthsInclusiveFromAcquisition(acq, year, month);
+    const lifeMonths = effectiveUsefulLifeMonths(asset);
+    const monthsHeldUncapped = monthsInclusiveFromAcquisition(acq, year, month);
+    let monthsHeld = monthsHeldUncapped;
     if (monthsHeld > lifeMonths) monthsHeld = lifeMonths;
+
+    const monthsRemainingInYear = monthsRemainingInYearForSnapshot(
+      month,
+      lifeMonths,
+      monthsHeldUncapped,
+    );
 
     const depHistoricalRaw = historical.div(lifeMonths).mul(monthsHeld);
     const depHistorical = Decimal.min(depHistoricalRaw, historical).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
@@ -113,7 +136,7 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
         depCmAdjustment: depCmAdjustment.toFixed(),
         depUpdated: depUpdated.toFixed(),
         netToDepreciate: netToDepreciate.toFixed(),
-        monthsRemainingInYear: monthsRemainingInCalendarYear(month),
+        monthsRemainingInYear,
         depreciationForPeriod: depreciationForPeriod.toFixed(),
         accumulatedDepreciation: depUpdated.toFixed(),
         netBookValue: netBookValue.toFixed(),
@@ -125,7 +148,7 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
         depCmAdjustment: depCmAdjustment.toFixed(),
         depUpdated: depUpdated.toFixed(),
         netToDepreciate: netToDepreciate.toFixed(),
-        monthsRemainingInYear: monthsRemainingInCalendarYear(month),
+        monthsRemainingInYear,
         depreciationForPeriod: depreciationForPeriod.toFixed(),
         accumulatedDepreciation: depUpdated.toFixed(),
         netBookValue: netBookValue.toFixed(),

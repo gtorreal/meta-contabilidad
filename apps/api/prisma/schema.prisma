@@ -94,6 +94,7 @@ model Asset {
   acquisitionAmountOriginal Decimal          @db.Decimal(24, 4)
   historicalValueClp      Decimal            @db.Decimal(24, 2)
   creditAfPercent         Decimal?           @db.Decimal(7, 4)
+  usefulLifeMonths        Int?
   acceleratedDepreciation Boolean            @default(false)
   status                  AssetStatus        @default(ACTIVE)
   disposedAt              DateTime?          @db.Date

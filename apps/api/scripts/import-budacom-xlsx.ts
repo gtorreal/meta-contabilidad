@@ -121,6 +121,8 @@ type MasterRow = {
   hist: number;
   original: number;
   credit: number | null;
+  /** Desde columna VIDA UTIL en Apertura / hojas mensuales, si existe */
+  usefulLifeMonths: number | null;
 };
 
 function extractMaster(row: unknown[], map: HeaderMap): MasterRow | null {
@@ -141,7 +143,13 @@ function extractMaster(row: unknown[], map: HeaderMap): MasterRow | null {
       ? null
       : String(invoiceRaw).trim().slice(0, 128);
 
-  return { fechaRaw: fecha, desc, invoice, hist, original, credit };
+  const vidaCol = map["VIDA UTIL"];
+  const vidaRaw = vidaCol !== undefined ? toNum(getCell(row, vidaCol)) : null;
+  const vidaRounded = vidaRaw !== null ? Math.round(vidaRaw) : null;
+  const usefulLifeMonths =
+    vidaRounded !== null && vidaRounded > 0 ? vidaRounded : null;
+
+  return { fechaRaw: fecha, desc, invoice, hist, original, credit, usefulLifeMonths };
 }
 
 function iterSheetData(
@@ -222,6 +230,7 @@ async function main() {
         acquisitionAmountOriginal: m.original.toFixed(2),
         historicalValueClp: m.hist.toFixed(2),
         creditAfPercent: m.credit !== null ? String(m.credit) : undefined,
+        usefulLifeMonths: m.usefulLifeMonths ?? undefined,
         acceleratedDepreciation: false,
         status: "ACTIVE",
       },

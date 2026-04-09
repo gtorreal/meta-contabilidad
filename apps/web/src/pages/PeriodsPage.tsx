@@ -12,7 +12,7 @@ type Period = {
 
 type SnapshotRow = {
   id: string;
-  asset: { description: string; category: { code: string } };
+  asset: { description: string; category: { code: string; acceleratedLifeMonths: number } };
   cmFactor: string;
   updatedGrossValue: string;
   depreciationForPeriod: string;
@@ -222,6 +222,7 @@ export function PeriodsPage() {
                 <th className="px-2 py-2 text-right">Dep. mes</th>
                 <th className="px-2 py-2 text-right">Dep. acum.</th>
                 <th className="px-2 py-2 text-right">Neto</th>
+                <th className="px-2 py-2 text-right">VU inic. acel.</th>
                 <th className="px-2 py-2">Meses rest. año</th>
               </tr>
             </thead>
@@ -234,6 +235,7 @@ export function PeriodsPage() {
                   <td className="px-2 py-2 text-right font-mono">{s.depreciationForPeriod}</td>
                   <td className="px-2 py-2 text-right font-mono">{s.accumulatedDepreciation}</td>
                   <td className="px-2 py-2 text-right font-mono">{s.netBookValue}</td>
+                  <td className="px-2 py-2 text-right">{s.asset.category.acceleratedLifeMonths}</td>
                   <td className="px-2 py-2">{s.monthsRemainingInYear}</td>
                 </tr>
               ))}

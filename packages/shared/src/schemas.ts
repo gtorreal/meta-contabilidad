@@ -41,6 +41,7 @@ export const assetCreateSchema = z.object({
   categoryId: z.string().uuid(),
   acquisitionCurrency: assetCurrencySchema,
   acquisitionAmountOriginal: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  usefulLifeMonths: z.number().int().positive().max(600).optional().nullable(),
   creditAfPercent: z.string().regex(/^\d+(\.\d+)?$/).optional().nullable(),
   acceleratedDepreciation: z.boolean().optional(),
   status: assetStatusSchema.optional(),

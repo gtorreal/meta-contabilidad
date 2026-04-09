@@ -80,6 +80,7 @@ assetsRoute.post("/", async (c) => {
         acquisitionAmountOriginal: body.data.acquisitionAmountOriginal,
         historicalValueClp,
         creditAfPercent: body.data.creditAfPercent ?? undefined,
+        usefulLifeMonths: body.data.usefulLifeMonths ?? undefined,
         acceleratedDepreciation: body.data.acceleratedDepreciation ?? false,
         status: body.data.status ?? "ACTIVE",
         odooAssetRef: body.data.odooAssetRef ?? undefined,
@@ -151,6 +152,9 @@ assetsRoute.patch("/:id", async (c) => {
           : {}),
         historicalValueClp,
         ...(data.creditAfPercent !== undefined ? { creditAfPercent: data.creditAfPercent ?? undefined } : {}),
+        ...(data.usefulLifeMonths !== undefined
+          ? { usefulLifeMonths: data.usefulLifeMonths ?? null }
+          : {}),
         ...(data.acceleratedDepreciation !== undefined
           ? { acceleratedDepreciation: data.acceleratedDepreciation }
           : {}),

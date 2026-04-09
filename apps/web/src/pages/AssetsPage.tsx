@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 
-type Category = { id: string; code: string; name: string };
+type Category = { id: string; code: string; name: string; normalLifeMonths: number };
 type Asset = {
   id: string;
   acquisitionDate: string;
@@ -13,6 +13,7 @@ type Asset = {
   acquisitionCurrency: string;
   acquisitionAmountOriginal: string;
   historicalValueClp: string;
+  usefulLifeMonths: number | null;
   status: string;
   odooAssetRef: string | null;
   odooMoveRef: string | null;
@@ -40,9 +41,20 @@ export function AssetsPage() {
     acquisitionAmountOriginal: "",
     odooAssetRef: "",
     odooMoveRef: "",
+    usefulLifeMonths: "",
   });
 
   const defaultCategoryId = useMemo(() => categories[0]?.id ?? "", [categories]);
+
+  useEffect(() => {
+    if (!categories.length) return;
+    setForm((f) => {
+      if (f.usefulLifeMonths !== "") return f;
+      const cid = f.categoryId || categories[0].id;
+      const cat = categories.find((c) => c.id === cid) ?? categories[0];
+      return { ...f, usefulLifeMonths: String(cat.normalLifeMonths) };
+    });
+  }, [categories]);
 
   const create = useMutation({
     mutationFn: () =>
@@ -54,6 +66,10 @@ export function AssetsPage() {
           invoiceNumber: form.invoiceNumber || null,
           odooAssetRef: form.odooAssetRef || null,
           odooMoveRef: form.odooMoveRef || null,
+          usefulLifeMonths: (() => {
+            const n = parseInt(form.usefulLifeMonths, 10);
+            return Number.isFinite(n) && n > 0 ? n : null;
+          })(),
         }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["assets"] }),
@@ -109,7 +125,15 @@ export function AssetsPage() {
             <select
               className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
               value={form.categoryId || defaultCategoryId}
-              onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
+              onChange={(e) => {
+                const id = e.target.value;
+                const cat = categories.find((c) => c.id === id);
+                setForm((f) => ({
+                  ...f,
+                  categoryId: id,
+                  usefulLifeMonths: cat ? String(cat.normalLifeMonths) : f.usefulLifeMonths,
+                }));
+              }}
             >
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -117,6 +141,18 @@ export function AssetsPage() {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            Vida útil (meses)
+            <input
+              type="number"
+              min={1}
+              max={600}
+              required
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              value={form.usefulLifeMonths}
+              onChange={(e) => setForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
+            />
           </label>
           <label className="text-xs font-medium text-slate-600">
             Moneda
@@ -197,6 +233,7 @@ export function AssetsPage() {
               <th className="px-3 py-2">Mon.</th>
               <th className="px-3 py-2 text-right">Original</th>
               <th className="px-3 py-2 text-right">Hist. CLP</th>
+              <th className="px-3 py-2 text-right">Vida útil (m)</th>
               <th className="px-3 py-2">Estado</th>
               <th className="px-3 py-2" />
             </tr>
@@ -215,6 +252,9 @@ export function AssetsPage() {
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-xs">
                   {a.historicalValueClp}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right text-slate-600">
+                  {a.usefulLifeMonths ?? "—"}
                 </td>
                 <td className="px-3 py-2">{a.status}</td>
                 <td className="px-3 py-2 text-right">
