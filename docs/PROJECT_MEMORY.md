@@ -10,6 +10,21 @@
 - **Auditoría**: `AuditLog` desde el MVP; actor puede ser usuario sistema hasta haber autenticación real.
 - **Decimales**: montos persistidos como `Decimal` en Postgres; no usar `float` en dominio contable.
 
+## Seguridad y entorno cerrado (MVP)
+
+**Supuesto:** la API (`PORT`, por defecto 8787) y la base de datos **no** deben ser alcanzables desde Internet ni desde redes en las que no confíes. El diseño actual prioriza productividad en local: la mayoría de rutas `/api/*` no exigen autenticación; solo la reapertura de período usa `X-Admin-Key` (`ADMIN_API_KEY`). La clave en el front (`VITE_ADMIN_API_KEY`) termina en el bundle del navegador: sirve para el flujo admin en dev, **no** es un secreto frente a quien tenga la SPA.
+
+**Checklist mínimo en local**
+
+- Mantener `.env` fuera del control de versiones (ya está en `.gitignore`); no commitear credenciales reales.
+- Usar valores distintos a los de `.env.example` si compartes red o máquina con otras personas.
+- `docker compose` publica Postgres solo en **127.0.0.1:5433** (ver `docker-compose.yml`) para que no escuche en todas las interfaces del host. Si necesitas conectar a Postgres desde **otra máquina** en la LAN, cambia el mapeo de puertos de forma consciente.
+
+**Si en el futuro expones la API** (VPS, túnel, oficina con Wi‑Fi compartido, etc.)
+
+- Proteger mutaciones (y, según política, lecturas sensibles) con autenticación en servidor; **no** confiar en `VITE_*` para secretos.
+- Restringir CORS a orígenes conocidos y evitar devolver mensajes de error internos al cliente en producción.
+
 ## Cómo arrancar en local
 
 1. `cp .env.example .env` y ajustar `DATABASE_URL` (usuario Postgres local o `meta:meta` en puerto 5433 con Docker).

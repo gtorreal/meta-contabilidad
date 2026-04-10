@@ -1,3 +1,5 @@
+# Postgres solo en loopback del host (evita escuchar 0.0.0.0:5433).
+# Para acceso desde otra máquina en la red, cambia a "5433:5432" de forma consciente.
 services:
   postgres:
     image: postgres:16-alpine
@@ -6,7 +8,7 @@ services:
       POSTGRES_PASSWORD: meta
       POSTGRES_DB: meta_contabilidad
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - meta_pg_data:/var/lib/postgresql/data
     healthcheck:

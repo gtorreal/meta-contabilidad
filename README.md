@@ -27,6 +27,8 @@ La API carga `.env` desde la raíz del monorepo o desde `apps/api/`.
 - API: `http://localhost:8787`
 - Web: `http://localhost:5173` (proxy a `/api`)
 
+**Entorno cerrado:** la API no está pensada para exposición pública sin auth adicional; Postgres en Docker escucha el host solo en `127.0.0.1:5433`. Detalle: [docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md#seguridad-y-entorno-cerrado-mvp).
+
 Documentación viva: [docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md). Decisiones: [docs/adr/](docs/adr/).
 
 ## GitHub
