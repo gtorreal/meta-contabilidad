@@ -1,3 +1,7 @@
+/**
+ * Utilidades IPC monotónico para referencia y tests (`cm-monotonic.test.ts`).
+ * El cierre de activos fijos (`close-month`) no usa este módulo: la depreciación va sobre histórico CLP sin CM.
+ */
 import { Decimal } from "decimal.js";
 import { iterateCalendarMonthsInclusive } from "./asset-period-math.js";
 import { fetchIpcMonthlyValueMap } from "./indices.js";
@@ -71,7 +75,7 @@ export async function computeCmFactorFromIpc(
   };
 }
 
-/** Para tests o llamadas que ya tienen el mapa cargado (p. ej. cierre en lote). */
+/** Carga IPC por rango de meses (p. ej. scripts o tests); el cierre de períodos no usa esta función. */
 export async function fetchIpcMapForCloseRange(
   minAcquisitionYear: number,
   minAcquisitionMonth: number,

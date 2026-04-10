@@ -1,23 +1,7 @@
 import { Decimal } from "decimal.js";
 import { monthsElapsedSinceAcquisitionMonth, usefulLifeMonthsRemaining } from "./asset-period-math.js";
 
-/** Igual que `computeCmFactorFromIpc` pero con valores ya resueltos (tests / golden). */
-export function computeCmFactorFromIpcValues(
-  ipcAcquisition: string,
-  ipcPeriod: string,
-): { factor: string; ipcAcquisition: string; ipcPeriod: string } {
-  const a = new Decimal(ipcAcquisition);
-  const p = new Decimal(ipcPeriod);
-  if (a.isZero()) {
-    throw new Error("IPC de adquisición no puede ser cero.");
-  }
-  const factor = p.div(a).toDecimalPlaces(10, Decimal.ROUND_HALF_UP);
-  return {
-    factor: factor.toFixed(10),
-    ipcAcquisition: a.toFixed(),
-    ipcPeriod: p.toFixed(),
-  };
-}
+const CM_FACTOR_ONE = "1.0000000000";
 
 export type BudacomSnapshotInputs = {
   historicalValueClp: string;
@@ -25,15 +9,15 @@ export type BudacomSnapshotInputs = {
   lifeMonths: number;
   periodYear: number;
   periodMonth: number;
-  ipcAcquisition: string;
-  ipcPeriod: string;
-  /** Acumulado depreciación “actualizada” del mes anterior (campo `accumulatedDepreciation` del snapshot previo). */
-  prevAccumulatedDepUpdated: string | null;
+  /** Acumulado depreciación del mes anterior (campo `accumulatedDepreciation` del snapshot previo). */
+  prevAccumulatedDepreciation: string | null;
 };
 
 /**
- * Auxiliar mensual alineado con Budacom Financiero: bruto actualizado por IPC (cierre / adquisición),
- * depreciación lineal sobre bruto histórico y sobre bruto actualizado; delta del mes = depUpdated − prev acum.
+ * Auxiliar mensual sobre valor histórico CLP (sin corrección monetaria por IPC).
+ * - Acumulado nunca supera el histórico.
+ * - Con vida útil restante 0: dep. del período = 0 y acumulado = histórico (cierre del bien).
+ * - Si el mes anterior trae acumulado inflado (p. ej. import con IPC), se topea al histórico y el delta no baja de 0.
  */
 export function computeBudacomSnapshotFields(input: BudacomSnapshotInputs): {
   cmFactor: string;
@@ -48,9 +32,8 @@ export function computeBudacomSnapshotFields(input: BudacomSnapshotInputs): {
   monthsRemainingInYear: number;
 } {
   const historical = new Decimal(input.historicalValueClp);
-  const { factor } = computeCmFactorFromIpcValues(input.ipcAcquisition, input.ipcPeriod);
-  const fDec = new Decimal(factor);
-  const updatedGross = historical.mul(fDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const historicalCap = historical.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const updatedGross = historicalCap;
 
   const acq = input.acquisitionDate;
   const monthsElapsedUncapped = monthsElapsedSinceAcquisitionMonth(acq, input.periodYear, input.periodMonth);
@@ -62,28 +45,37 @@ export function computeBudacomSnapshotFields(input: BudacomSnapshotInputs): {
   const depHistoricalRaw = historical.div(input.lifeMonths).mul(monthsHeld);
   const depHistorical = Decimal.min(depHistoricalRaw, historical).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-  const depUpdatedRaw = updatedGross.div(input.lifeMonths).mul(monthsHeld);
-  const depUpdated = Decimal.min(depUpdatedRaw, updatedGross).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const targetAccum = Decimal.min(depHistorical, historicalCap).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-  const depCmAdjustment = depUpdated
-    .sub(depHistorical)
-    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
-    .toFixed(2);
-  const prevAccum =
-    input.prevAccumulatedDepUpdated !== null ? new Decimal(input.prevAccumulatedDepUpdated) : new Decimal(0);
-  const depreciationForPeriod = depUpdated.sub(prevAccum).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-  const netToDepreciate = updatedGross.sub(depUpdated).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const prevRaw =
+    input.prevAccumulatedDepreciation !== null ? new Decimal(input.prevAccumulatedDepreciation) : new Decimal(0);
+  const prevCapped = Decimal.min(prevRaw, historicalCap).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+  let depreciationForPeriod = targetAccum.sub(prevCapped).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  if (depreciationForPeriod.isNeg()) {
+    depreciationForPeriod = new Decimal(0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  }
+
+  let accumulatedDepreciation = targetAccum;
+  if (monthsRemainingInYear === 0) {
+    depreciationForPeriod = new Decimal(0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    accumulatedDepreciation = targetAccum;
+  }
+
+  const depUpdated = accumulatedDepreciation;
+  const depCmAdjustment = "0.00";
+  const netToDepreciate = updatedGross.sub(accumulatedDepreciation).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   const netBookValue = netToDepreciate;
 
   return {
-    cmFactor: factor,
+    cmFactor: CM_FACTOR_ONE,
     updatedGrossValue: updatedGross.toFixed(2),
     depHistorical: depHistorical.toFixed(2),
     depCmAdjustment,
     depUpdated: depUpdated.toFixed(2),
     netToDepreciate: netToDepreciate.toFixed(2),
     depreciationForPeriod: depreciationForPeriod.toFixed(2),
-    accumulatedDepreciation: depUpdated.toFixed(2),
+    accumulatedDepreciation: accumulatedDepreciation.toFixed(2),
     netBookValue: netBookValue.toFixed(2),
     monthsRemainingInYear,
   };

@@ -21,7 +21,8 @@
     "audit:periods": "tsx scripts/audit-period-snapshots.ts",
     "import:sii": "tsx scripts/import-sii-indices.ts",
     "import:ipc": "tsx scripts/import-ipc.ts",
-    "refresh:snapshot-vu": "tsx scripts/refresh-snapshot-vu-restante.ts"
+    "refresh:snapshot-vu": "tsx scripts/refresh-snapshot-vu-restante.ts",
+    "recalculate:snapshots": "tsx scripts/recalculate-open-snapshots.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

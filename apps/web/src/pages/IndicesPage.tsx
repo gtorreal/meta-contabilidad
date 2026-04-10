@@ -115,7 +115,9 @@ export function IndicesPage() {
           <code className="text-xs">apps/api/data/ipc-monthly.json</code>); cárguela con el botón de abajo,{" "}
           <code className="text-xs">pnpm import:ipc</code> o el seed.{" "}
           <span className="font-medium">Dólar</span> y <span className="font-medium">UF</span> son diarios y vienen del
-          SII (botón o <code className="text-xs">AUTO_SYNC_SII_ON_STARTUP</code>). USD→CLP y CM leen solo de aquí.
+          SII (botón o <code className="text-xs">AUTO_SYNC_SII_ON_STARTUP</code>). USD→CLP en alta de activo usa el dólar
+          observado de aquí. La serie <span className="font-medium">IPC</span> se guarda como referencia; por ahora no se
+          usa en cálculos de depreciación.
         </p>
       </div>
 

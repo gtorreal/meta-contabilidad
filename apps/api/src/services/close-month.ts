@@ -1,6 +1,5 @@
 import { prisma } from "../db.js";
 import { computeBudacomSnapshotFields } from "./budacom-snapshot.js";
-import { computeMonotonicIpcFactorFromMap, fetchIpcMapForCloseRange } from "./cm.js";
 import {
   effectiveUsefulLifeMonths,
   type AssetWithCategory,
@@ -81,26 +80,8 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
     return { periodId: period.id, processed: 0, results: [] };
   }
 
-  const minAcq = eligible.reduce(
-    (min, a) => (a.acquisitionDate < min ? a.acquisitionDate : min),
-    eligible[0].acquisitionDate,
-  );
-  const minY = minAcq.getUTCFullYear();
-  const minM = minAcq.getUTCMonth() + 1;
-  const ipcMap = await fetchIpcMapForCloseRange(minY, minM, year, month);
-
   for (const asset of eligible as AssetWithCategory[]) {
     const acq = new Date(asset.acquisitionDate);
-    const acqY = acq.getUTCFullYear();
-    const acqM = acq.getUTCMonth() + 1;
-
-    const { ipcAcquisition, ipcPeriodEffective } = computeMonotonicIpcFactorFromMap(
-      ipcMap,
-      acqY,
-      acqM,
-      year,
-      month,
-    );
 
     const prev = await findPreviousSnapshot(asset.id, year, month);
     const prevAccumStr = prev ? prev.accumulatedDepreciation.toString() : null;
@@ -112,9 +93,7 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
       lifeMonths,
       periodYear: year,
       periodMonth: month,
-      ipcAcquisition,
-      ipcPeriod: ipcPeriodEffective,
-      prevAccumulatedDepUpdated: prevAccumStr,
+      prevAccumulatedDepreciation: prevAccumStr,
     });
 
     const snap = await prisma.assetPeriodSnapshot.upsert({

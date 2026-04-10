@@ -4,7 +4,7 @@
 
 - **Monorepo** (`apps/web`, `apps/api`, `packages/shared`). Prisma solo en `apps/api/prisma`.
 - **Histórico contable en CLP**: el maestro de activos persiste `historicalValueClp` siempre en pesos. Si la moneda de origen es **USD**, ese valor se calcula con el **dólar observado** del día calendario de adquisición tomado de `EconomicIndex` (tipo `USD_OBSERVED`). No hay tasas hardcodeadas en lógica de negocio.
-- **Corrección monetaria (CM) y auxiliar Budacom**: el cierre (`runCloseMonthForPeriod`) usa el **máximo** del IPC mensual desde adquisición hasta el período como numerador del CM (evita caídas mes a mes del índice y depreciaciones negativas espurias). Ver `cm.ts`, ADR-0003.
+- **Depreciación y snapshots**: el cierre (`runCloseMonthForPeriod`) calcula snapshots en **histórico CLP** sin corrección monetaria por IPC. La serie **IPC** en `EconomicIndex` se mantiene en Índices como referencia. La lógica IPC monotónica sigue en `cm.ts` solo para tests. Ver ADR-0003.
 - **Odoo**: campos de referencia texto en activos (`odooAssetRef`, `odooMoveRef`). Sin API, jobs ni sincronización automática en esta fase.
 - **Cierres**: un período **cerrado** es inmutable para el flujo operativo; **reapertura** solo con rol Admin (MVP: header `X-Admin-Key` = `ADMIN_API_KEY`) y **motivo obligatorio** registrado en `AuditLog`.
 - **Auditoría**: `AuditLog` desde el MVP; actor puede ser usuario sistema hasta haber autenticación real.
@@ -73,4 +73,5 @@ Atajo (API, con `DATABASE_URL`): `pnpm --filter @meta-contabilidad/api apply:eqc
 - `pnpm --filter @meta-contabilidad/api sync:budacom-snapshots [ruta.xlsx]` — **sobrescribe** los `AssetPeriodSnapshot` de cada hoja `YYYY_MM` con los valores del Excel (misma lectura que `import:budacom`). Omite hojas cuyo período esté **cerrado**. Úsalo cuando la planilla Budacom sea la fuente de verdad y el motor de cierre no deba recalcular esos meses.
 - `pnpm --filter @meta-contabilidad/api reconcile:budacom [ruta.xlsx]` — compara, por cada hoja `YYYY_MM` que tenga período en BD, la suma de **DEPRECIACION PERIODO** del Excel vs la suma de `depreciationForPeriod` en snapshots, y exige el **mismo número de filas** Excel vs snapshots. Exit code 1 si no calza; tolerancia de redondeo **0,02 CLP** por período. Por defecto usa `~/Downloads/Activo fijo Financiero Budacom 2025.xlsx`.
 - `pnpm --filter @meta-contabilidad/api audit:periods` — tabla TSV: período, cantidad snapshots, elegibles, suma depreciación del período.
-- Test de paridad opcional: `BUDACOM_XLSX_PATH=/ruta/al.xlsx pnpm --filter @meta-contabilidad/api test -- src/services/budacom-excel-parity.integration.test.ts` (solo corre si el archivo existe).
+- `pnpm exec dotenv -e .env -- pnpm --filter @meta-contabilidad/api run recalculate:snapshots` — recalcula snapshots en **períodos OPEN** desde la primera adquisición hasta el último período en BD o el mes actual (opcional: `-- año mes`). Omite **CLOSED**.
+- Test de paridad Excel Budacom: deshabilitado (`describe.skip`) mientras el motor no use CM por IPC; el archivo `budacom-excel-parity.integration.test.ts` documenta cómo reactivarlo.

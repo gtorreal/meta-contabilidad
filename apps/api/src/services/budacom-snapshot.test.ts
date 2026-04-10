@@ -14,13 +14,11 @@ type GoldenCase = {
   lifeMonths: number;
   periodYear: number;
   periodMonth: number;
-  ipcAcquisitionValue: string;
-  ipcPeriodValue: string;
-  prevAccumulatedDepUpdated: string | null;
+  prevAccumulatedDepreciation: string | null;
   expected: Record<string, string | number>;
 };
 
-describe("computeBudacomSnapshotFields (golden Budacom)", () => {
+describe("computeBudacomSnapshotFields (golden sin IPC)", () => {
   const golden = JSON.parse(readFileSync(goldenPath, "utf-8")) as { cases: GoldenCase[] };
 
   for (const c of golden.cases) {
@@ -32,9 +30,7 @@ describe("computeBudacomSnapshotFields (golden Budacom)", () => {
         lifeMonths: c.lifeMonths,
         periodYear: c.periodYear,
         periodMonth: c.periodMonth,
-        ipcAcquisition: c.ipcAcquisitionValue,
-        ipcPeriod: c.ipcPeriodValue,
-        prevAccumulatedDepUpdated: c.prevAccumulatedDepUpdated,
+        prevAccumulatedDepreciation: c.prevAccumulatedDepreciation,
       });
       expect(out.cmFactor).toBe(c.expected.cmFactor);
       expect(out.updatedGrossValue).toBe(c.expected.updatedGrossValue);

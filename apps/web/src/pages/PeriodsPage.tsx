@@ -147,7 +147,7 @@ export function PeriodsPage() {
       qc.invalidateQueries({ queryKey: ["periods"] });
       const label = `${y}-${String(m).padStart(2, "0")}`;
       setRunCloseFeedback(
-        `Período ${label}: ${data.processed} activo(s) elegible(s) con snapshot (CM e IPC ya cargados, depreciación según reglas actuales).`,
+        `Período ${label}: ${data.processed} activo(s) elegible(s) con snapshot (depreciación lineal sobre valor histórico CLP).`,
       );
     },
     onError: () => setRunCloseFeedback(null),
@@ -205,8 +205,8 @@ export function PeriodsPage() {
         <p className="mt-1 text-sm text-slate-600">
           La <span className="font-medium">depreciación del mes</span> depende del mes anterior en base: si calculaste un
           mes tarde sin la cadena, usá <span className="font-medium">Generar cadena desde primera compra</span>. Para un
-          solo mes, el formulario o <span className="font-medium">«Generar auxiliar»</span> en la fila (IPC + activos en
-          Índices). <span className="font-medium">Cerrar período</span> lo deja inmutable. Reapertura solo con{" "}
+          solo mes, el formulario o <span className="font-medium">«Generar auxiliar»</span> en la fila.{" "}
+          <span className="font-medium">Cerrar período</span> lo deja inmutable. Reapertura solo con{" "}
           <code className="rounded bg-slate-100 px-1">X-Admin-Key</code> (ver{" "}
           <code className="rounded bg-slate-100 px-1">VITE_ADMIN_API_KEY</code>).
         </p>
@@ -254,7 +254,7 @@ export function PeriodsPage() {
         <p className="mt-1 text-xs text-slate-600">
           Recorre en orden cada mes civil desde el mes de la <span className="font-medium">adquisición más antigua</span>{" "}
           de un activo ACTIVE hasta el mes tope (inclusive). Omite períodos ya <span className="font-medium">CLOSED</span>
-          . Puede tardar varios minutos (muchos meses × activos). Requiere IPC desde el año de esa compra.
+          . Puede tardar varios minutos (muchos meses × activos).
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <label className="text-xs font-medium text-slate-600">
@@ -356,7 +356,7 @@ export function PeriodsPage() {
                         title={
                           p.eligibleAssetCount === 0
                             ? "No hay activos activos elegibles a la fecha de cierre de este mes."
-                            : "Genera snapshots para este año-mes con activos + IPC actuales (mismo criterio que el formulario)."
+                            : "Genera snapshots para este año-mes con los activos actuales (mismo criterio que el formulario)."
                         }
                         className="text-xs text-sky-800 underline disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => runClose.mutate({ year: p.year, month: p.month })}
@@ -537,9 +537,9 @@ export function PeriodsPage() {
               </tbody>
             </table>
             <p className="mt-3 max-w-2xl text-xs text-slate-600">
-              Total = suma de «Dep. mes». Si no calza con Budacom: revise en Activos que la vida útil coincida (p. ej.
-              acelerada 24 meses ítem 23); import sin «VIDA UTIL» en Apertura asume acelerada para EQ_COMP. Luego
-              regenere la cadena de snapshots con IPC hasta este período.
+              Total = suma de «Dep. mes». Revise en Activos que la vida útil coincida (p. ej. acelerada 24 meses ítem 23);
+              import sin «VIDA UTIL» en Apertura asume acelerada para EQ_COMP. Si los montos no cuadran, regenere la cadena
+              de snapshots hasta este período.
             </p>
             {!snapshotsPending && snapshots.length === 0 && (
               <p className="mt-2 text-xs text-slate-500">Sin depreciación en este período (auxiliar vacío).</p>

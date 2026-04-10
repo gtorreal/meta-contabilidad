@@ -79,6 +79,80 @@ function assetToEditForm(asset: Asset): AssetEditForm {
   };
 }
 
+type AssetCreateForm = {
+  acquisitionDate: string;
+  invoiceNumber: string;
+  description: string;
+  categoryId: string;
+  acquisitionCurrency: string;
+  acquisitionAmountOriginal: string;
+  odooAssetRef: string;
+  odooMoveRef: string;
+  usefulLifeMonths: string;
+};
+
+function emptyCreateForm(): AssetCreateForm {
+  return {
+    acquisitionDate: new Date().toISOString().slice(0, 10),
+    invoiceNumber: "",
+    description: "",
+    categoryId: "",
+    acquisitionCurrency: "CLP",
+    acquisitionAmountOriginal: "",
+    odooAssetRef: "",
+    odooMoveRef: "",
+    usefulLifeMonths: "",
+  };
+}
+
+function validateCreateForm(form: AssetCreateForm, categories: Category[]): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(form.acquisitionDate.trim())) {
+    return "La fecha de adquisición es obligatoria y debe ser válida.";
+  }
+  if (!form.categoryId.trim()) return "Seleccione una categoría.";
+  const cat = categories.find((c) => c.id === form.categoryId);
+  if (!cat) return "Categoría no válida.";
+  const cur = form.acquisitionCurrency;
+  if (cur !== "CLP" && cur !== "USD") return "Seleccione una moneda válida.";
+  const amt = form.acquisitionAmountOriginal.trim();
+  if (!/^\d+(\.\d{1,4})?$/.test(amt)) {
+    return "Monto original inválido (números y hasta 4 decimales).";
+  }
+  if (!form.description.trim()) return "La descripción es obligatoria.";
+  if (!form.invoiceNumber.trim()) return "El Nº de factura es obligatorio.";
+  const v = parseInt(form.usefulLifeMonths, 10);
+  if (!Number.isFinite(v) || v <= 0) return "Elija una vida útil válida.";
+  const opts = usefulLifeSelectOptions(cat);
+  if (!opts.some((o) => o.value === String(v))) {
+    return "La vida útil debe ser la normal o la acelerada de la categoría elegida.";
+  }
+  return null;
+}
+
+function buildCreateBody(form: AssetCreateForm, categories: Category[]): Record<string, unknown> | null {
+  const cat = categories.find((c) => c.id === form.categoryId);
+  if (!cat) return null;
+  const v = parseInt(form.usefulLifeMonths, 10);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  const n = cat.normalLifeMonths;
+  const a = cat.acceleratedLifeMonths;
+  const acceleratedDepreciation = n !== a && v === a;
+  const amt = form.acquisitionAmountOriginal.trim();
+  if (!/^\d+(\.\d{1,4})?$/.test(amt)) return null;
+  return {
+    acquisitionDate: form.acquisitionDate,
+    description: form.description.trim(),
+    categoryId: form.categoryId,
+    acquisitionCurrency: form.acquisitionCurrency,
+    acquisitionAmountOriginal: amt,
+    invoiceNumber: form.invoiceNumber.trim(),
+    odooAssetRef: form.odooAssetRef.trim() === "" ? null : form.odooAssetRef.trim(),
+    odooMoveRef: form.odooMoveRef.trim() === "" ? null : form.odooMoveRef.trim(),
+    usefulLifeMonths: v,
+    acceleratedDepreciation,
+  };
+}
+
 export function AssetsPage() {
   const qc = useQueryClient();
   const {
@@ -105,71 +179,41 @@ export function AssetsPage() {
   const [editStep, setEditStep] = useState<"form" | "confirm">("form");
   const [editClientError, setEditClientError] = useState<string | null>(null);
 
-  const [form, setForm] = useState({
-    acquisitionDate: new Date().toISOString().slice(0, 10),
-    invoiceNumber: "",
-    description: "",
-    categoryId: "",
-    acquisitionCurrency: "CLP",
-    acquisitionAmountOriginal: "",
-    odooAssetRef: "",
-    odooMoveRef: "",
-    usefulLifeMonths: "",
-  });
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
+  const [createClientError, setCreateClientError] = useState<string | null>(null);
 
-  const defaultCategoryId = useMemo(() => categories[0]?.id ?? "", [categories]);
+  const [form, setForm] = useState<AssetCreateForm>(() => emptyCreateForm());
 
-  const selectedCategory = useMemo(() => {
-    const cid = form.categoryId || defaultCategoryId;
-    return categories.find((c) => c.id === cid) ?? null;
-  }, [categories, form.categoryId, defaultCategoryId]);
+  const selectedCreateCategory = useMemo(() => {
+    if (!form.categoryId) return null;
+    return categories.find((c) => c.id === form.categoryId) ?? null;
+  }, [categories, form.categoryId]);
 
   const usefulLifeOptions = useMemo(
-    () => (selectedCategory ? usefulLifeSelectOptions(selectedCategory) : []),
-    [selectedCategory],
+    () => (selectedCreateCategory ? usefulLifeSelectOptions(selectedCreateCategory) : []),
+    [selectedCreateCategory],
   );
 
   useEffect(() => {
-    if (!categories.length) return;
-    setForm((f) => {
-      if (f.usefulLifeMonths !== "") return f;
-      const cid = f.categoryId || categories[0].id;
-      const cat = categories.find((c) => c.id === cid) ?? categories[0];
-      return { ...f, usefulLifeMonths: String(cat.normalLifeMonths) };
-    });
-  }, [categories]);
-
-  useEffect(() => {
-    if (!selectedCategory || !usefulLifeOptions.length) return;
+    if (!selectedCreateCategory || !usefulLifeOptions.length) return;
     const allowed = new Set(usefulLifeOptions.map((o) => o.value));
     setForm((f) => {
       if (allowed.has(f.usefulLifeMonths)) return f;
-      return { ...f, usefulLifeMonths: String(selectedCategory.normalLifeMonths) };
+      return { ...f, usefulLifeMonths: String(selectedCreateCategory.normalLifeMonths) };
     });
-  }, [selectedCategory, usefulLifeOptions]);
+  }, [selectedCreateCategory, usefulLifeOptions]);
 
   const create = useMutation({
-    mutationFn: () => {
-      const usefulLifeMonthsParsed = parseInt(form.usefulLifeMonths, 10);
-      return api<Asset>("/api/assets", {
-        method: "POST",
-        body: JSON.stringify({
-          acquisitionDate: form.acquisitionDate,
-          description: form.description,
-          categoryId: form.categoryId || defaultCategoryId,
-          acquisitionCurrency: form.acquisitionCurrency,
-          acquisitionAmountOriginal: form.acquisitionAmountOriginal,
-          invoiceNumber: form.invoiceNumber.trim() === "" ? null : form.invoiceNumber,
-          odooAssetRef: form.odooAssetRef.trim() === "" ? null : form.odooAssetRef,
-          odooMoveRef: form.odooMoveRef.trim() === "" ? null : form.odooMoveRef,
-          usefulLifeMonths:
-            Number.isFinite(usefulLifeMonthsParsed) && usefulLifeMonthsParsed > 0
-              ? usefulLifeMonthsParsed
-              : null,
-        }),
-      });
+    mutationFn: (body: Record<string, unknown>) =>
+      api<Asset>("/api/assets", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assets"] });
+      setCreateConfirmOpen(false);
+      setShowCreateForm(false);
+      setForm(emptyCreateForm());
+      setCreateClientError(null);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["assets"] }),
   });
 
   const remove = useMutation({
@@ -270,6 +314,20 @@ export function AssetsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [assetToEdit, closeEditModal]);
 
+  const closeCreateConfirm = useCallback(() => {
+    setCreateConfirmOpen(false);
+    create.reset();
+  }, [create]);
+
+  useEffect(() => {
+    if (!createConfirmOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeCreateConfirm();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [createConfirmOpen, closeCreateConfirm]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -287,127 +345,178 @@ export function AssetsPage() {
       )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-800">Nuevo activo</h2>
-        <form
-          className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            create.mutate();
-          }}
-        >
-          <label className="text-xs font-medium text-slate-600">
-            Fecha adquisición
-            <input
-              type="date"
-              required
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.acquisitionDate}
-              onChange={(e) => setForm((f) => ({ ...f, acquisitionDate: e.target.value }))}
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            Categoría
-            <select
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.categoryId || defaultCategoryId}
-              onChange={(e) => {
-                const id = e.target.value;
-                const cat = categories.find((c) => c.id === id);
-                setForm((f) => ({
-                  ...f,
-                  categoryId: id,
-                  usefulLifeMonths: cat ? String(cat.normalLifeMonths) : f.usefulLifeMonths,
-                }));
+        {!showCreateForm ? (
+          <button
+            type="button"
+            disabled={categoriesPending || !categories.length}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            onClick={() => {
+              create.reset();
+              setCreateClientError(null);
+              setForm(emptyCreateForm());
+              setShowCreateForm(true);
+            }}
+          >
+            Agregar Activo Fijo
+          </button>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-800">Nuevo activo</h2>
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  create.reset();
+                  setCreateClientError(null);
+                  setForm(emptyCreateForm());
+                  setShowCreateForm(false);
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+            <form
+              className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setCreateClientError(null);
+                create.reset();
+                const err = validateCreateForm(form, categories);
+                if (err) {
+                  setCreateClientError(err);
+                  return;
+                }
+                setCreateConfirmOpen(true);
               }}
             >
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code} — {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            Vida útil (meses)
-            <select
-              required
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.usefulLifeMonths}
-              onChange={(e) => setForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
-            >
-              {usefulLifeOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            Moneda
-            <select
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.acquisitionCurrency}
-              onChange={(e) => setForm((f) => ({ ...f, acquisitionCurrency: e.target.value }))}
-            >
-              <option value="CLP">CLP</option>
-              <option value="USD">USD</option>
-            </select>
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            Monto original
-            <input
-              required
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.acquisitionAmountOriginal}
-              onChange={(e) => setForm((f) => ({ ...f, acquisitionAmountOriginal: e.target.value }))}
-              placeholder="1000000 o 1200.50"
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-600 md:col-span-2">
-            Descripción
-            <input
-              required
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            Nº factura
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.invoiceNumber}
-              onChange={(e) => setForm((f) => ({ ...f, invoiceNumber: e.target.value }))}
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            Odoo asset ref
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.odooAssetRef}
-              onChange={(e) => setForm((f) => ({ ...f, odooAssetRef: e.target.value }))}
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            Odoo move ref
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={form.odooMoveRef}
-              onChange={(e) => setForm((f) => ({ ...f, odooMoveRef: e.target.value }))}
-            />
-          </label>
-          <div className="flex items-end">
-            <button
-              type="submit"
-              disabled={create.isPending || categoriesPending || !categories.length}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {create.isPending ? "Guardando…" : "Crear"}
-            </button>
-          </div>
-        </form>
-        {create.error && (
-          <p className="mt-2 text-sm text-red-600">{(create.error as Error).message}</p>
+              <label className="text-xs font-medium text-slate-600">
+                Fecha adquisición
+                <input
+                  type="date"
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.acquisitionDate}
+                  onChange={(e) => setForm((f) => ({ ...f, acquisitionDate: e.target.value }))}
+                />
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Categoría
+                <select
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.categoryId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const cat = categories.find((c) => c.id === id);
+                    setForm((f) => ({
+                      ...f,
+                      categoryId: id,
+                      usefulLifeMonths: cat ? String(cat.normalLifeMonths) : "",
+                    }));
+                  }}
+                >
+                  <option value="" disabled>
+                    Seleccione categoría
+                  </option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code} — {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Vida útil (meses)
+                <select
+                  required={Boolean(form.categoryId && usefulLifeOptions.length)}
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.usefulLifeMonths}
+                  onChange={(e) => setForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
+                  disabled={!form.categoryId || !usefulLifeOptions.length}
+                >
+                  {!form.categoryId ? (
+                    <option value="">Elija categoría primero</option>
+                  ) : (
+                    usefulLifeOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Moneda
+                <select
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.acquisitionCurrency}
+                  onChange={(e) => setForm((f) => ({ ...f, acquisitionCurrency: e.target.value }))}
+                >
+                  <option value="CLP">CLP</option>
+                  <option value="USD">USD</option>
+                </select>
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Monto original
+                <input
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.acquisitionAmountOriginal}
+                  onChange={(e) => setForm((f) => ({ ...f, acquisitionAmountOriginal: e.target.value }))}
+                  placeholder="1000000 o 1200.50"
+                />
+              </label>
+              <label className="text-xs font-medium text-slate-600 md:col-span-2">
+                Descripción
+                <input
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                />
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Nº factura
+                <input
+                  required
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.invoiceNumber}
+                  onChange={(e) => setForm((f) => ({ ...f, invoiceNumber: e.target.value }))}
+                />
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Odoo asset ref
+                <input
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.odooAssetRef}
+                  onChange={(e) => setForm((f) => ({ ...f, odooAssetRef: e.target.value }))}
+                />
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Odoo move ref
+                <input
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.odooMoveRef}
+                  onChange={(e) => setForm((f) => ({ ...f, odooMoveRef: e.target.value }))}
+                />
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={categoriesPending || !categories.length}
+                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  Crear
+                </button>
+              </div>
+            </form>
+            {createClientError && <p className="mt-2 text-sm text-red-600">{createClientError}</p>}
+            {create.error && !createConfirmOpen && (
+              <p className="mt-2 text-sm text-red-600">{(create.error as Error).message}</p>
+            )}
+          </>
         )}
       </section>
 
@@ -508,11 +617,71 @@ export function AssetsPage() {
         </table>
         {!assetsPending && !assets.length && !assetsError && (
           <p className="p-4 text-sm text-slate-500">
-            No hay activos dados de alta. Complete el formulario de arriba y pulse Crear, o compruebe que la API y la
-            base de datos están en marcha si esperaba ver datos.
+            No hay activos dados de alta. Pulse <span className="font-medium">Agregar Activo Fijo</span>, complete el
+            formulario y confirme la creación, o compruebe que la API y la base de datos están en marcha si esperaba ver
+            datos.
           </p>
         )}
       </section>
+
+      {createConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="presentation"
+          onClick={() => closeCreateConfirm()}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-asset-title"
+            className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="create-asset-title" className="text-sm font-semibold text-slate-900">
+              Confirmar alta
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              ¿Crear el activo fijo «{form.description.trim() || "(sin descripción)"}»?
+            </p>
+            <ul className="mt-2 list-inside list-disc text-sm text-slate-600">
+              <li>
+                Fecha {form.acquisitionDate} · {form.acquisitionCurrency}{" "}
+                {form.acquisitionAmountOriginal.trim() || "—"}
+              </li>
+              <li>Factura {form.invoiceNumber.trim() || "—"}</li>
+            </ul>
+            {create.isError && (
+              <p className="mt-2 text-sm text-red-600">{(create.error as Error).message}</p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                disabled={create.isPending}
+                onClick={() => closeCreateConfirm()}
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                disabled={create.isPending}
+                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                onClick={() => {
+                  const body = buildCreateBody(form, categories);
+                  if (!body) {
+                    setCreateClientError("No se pudo armar la solicitud. Revise categoría y vida útil.");
+                    setCreateConfirmOpen(false);
+                    return;
+                  }
+                  create.mutate(body);
+                }}
+              >
+                {create.isPending ? "Guardando…" : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {assetToEdit && editForm && (
         <div

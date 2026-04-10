@@ -5,7 +5,7 @@
  * Uso:
  *   pnpm exec tsx scripts/export-budacom-golden.ts [ruta.xlsx]
  *
- * No incluye IPC por mes (debe mapearse aparte a `ipcAcquisitionValue` / `ipcPeriodValue` del golden).
+ * El golden de tests (`budacom-golden.json`) ya no usa IPC: contrastar expectativas con histórico CLP sin CM.
  */
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -163,7 +163,7 @@ async function main() {
         source: xlsxPath,
         rowCount: out.length,
         rows: out,
-        note: "Completar ipcAcquisitionValue/ipcPeriodValue en casos de test según EconomicIndex IPC del mes civil.",
+        note: "Los tests de snapshot usan histórico sin CM; esta exportación sirve solo como referencia de columnas Excel.",
       },
       null,
       2,

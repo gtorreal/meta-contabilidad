@@ -1,6 +1,6 @@
 # meta-contabilidad
 
-MVP local para **activos fijos**: maestro único por bien, índices económicos centralizados (`EconomicIndex`), conversión USD→CLP con dólar observado, cierre mensual con snapshots (CM vía IPC en este MVP) y períodos cerrados con reapertura auditada (Admin).
+MVP local para **activos fijos**: maestro único por bien, índices económicos centralizados (`EconomicIndex`), conversión USD→CLP con dólar observado, cierre mensual con snapshots (depreciación lineal sobre histórico CLP; la serie IPC en Índices es referencia y no entra en el cierre) y períodos cerrados con reapertura auditada (Admin).
 
 ## Requisitos
 

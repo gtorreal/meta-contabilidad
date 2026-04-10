@@ -118,9 +118,11 @@ model AssetPeriodSnapshot {
   asset                   Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
   periodId                String
   period                  AccountingPeriod   @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  /// Hoy siempre 1; se conserva el campo por compatibilidad con datos/import Budacom históricos.
   cmFactor                Decimal            @db.Decimal(24, 10)
   updatedGrossValue       Decimal            @db.Decimal(24, 2)
   depHistorical           Decimal            @db.Decimal(24, 2)
+  /// Hoy 0 cuando el cierre recalcula sin CM; puede ser distinto en filas importadas desde Excel Budacom.
   depCmAdjustment         Decimal            @db.Decimal(24, 2)
   depUpdated              Decimal            @db.Decimal(24, 2)
   netToDepreciate         Decimal            @db.Decimal(24, 2)

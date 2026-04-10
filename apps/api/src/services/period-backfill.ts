@@ -90,7 +90,7 @@ export async function backfillSnapshotsChronologically(
   }
 
   const untilOrd = monthOrdinal(untilYear, untilMonth);
-  let startOrd = monthOrdinal(start.year, start.month);
+  const startOrd = monthOrdinal(start.year, start.month);
   if (startOrd > untilOrd) {
     throw new Error(
       `El mes tope ${untilYear}-${String(untilMonth).padStart(2, "0")} es anterior al primer alta (${start.year}-${String(start.month).padStart(2, "0")}).`,
