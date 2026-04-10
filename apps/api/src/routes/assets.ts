@@ -6,7 +6,7 @@ import { resolveHistoricalValueClp } from "../services/fx.js";
 import { assertAssetEditable } from "../services/period-guard.js";
 import {
   computeVuRestanteMeses,
-  effectiveUsefulLifeMonths,
+  declaredInitialUsefulLifeMonths,
   type AssetWithCategory,
 } from "../services/effective-useful-life.js";
 import { usefulLifeErrorForCategory } from "../services/useful-life-for-category.js";
@@ -30,7 +30,7 @@ assetsRoute.get("/", async (c) => {
     rows.map((r) => {
       const base = serializeAssetDecimals(r as unknown as Record<string, unknown>);
       const asset = r as unknown as AssetWithCategory;
-      const initialUsefulLifeMonths = effectiveUsefulLifeMonths(asset);
+      const initialUsefulLifeMonths = declaredInitialUsefulLifeMonths(asset);
       const remainingUsefulLifeMonths = computeVuRestanteMeses(asset, periodYear, periodMonth);
       return { ...base, initialUsefulLifeMonths, remainingUsefulLifeMonths };
     }),

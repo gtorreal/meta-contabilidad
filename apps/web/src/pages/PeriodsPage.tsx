@@ -12,10 +12,11 @@ type Period = {
   eligibleAssetCount: number;
 };
 
-type AuxSortKey = "acquisitionDate" | "acceleratedLife" | "historicalValue";
+type AuxSortKey = "acquisitionDate" | "initialUsefulLife" | "historicalValue";
 
 type SnapshotRow = {
   id: string;
+  initialUsefulLifeMonths: number;
   asset: {
     description: string;
     acquisitionDate: string;
@@ -37,9 +38,9 @@ function cmpSnapshotsForSort(a: SnapshotRow, b: SnapshotRow, key: AuxSortKey): n
     const c = da.localeCompare(db);
     return c !== 0 ? c : tieBreak;
   }
-  if (key === "acceleratedLife") {
-    const va = a.asset.category.acceleratedLifeMonths;
-    const vb = b.asset.category.acceleratedLifeMonths;
+  if (key === "initialUsefulLife") {
+    const va = a.initialUsefulLifeMonths;
+    const vb = b.initialUsefulLifeMonths;
     if (va !== vb) return va - vb;
     return tieBreak;
   }
@@ -606,7 +607,7 @@ export function PeriodsPage() {
                 <th
                   className="px-2 py-2 text-right"
                   aria-sort={
-                    auxSort.key === "acceleratedLife"
+                    auxSort.key === "initialUsefulLife"
                       ? auxSort.dir === "asc"
                         ? "ascending"
                         : "descending"
@@ -618,14 +619,14 @@ export function PeriodsPage() {
                     className="ml-auto flex items-center justify-end gap-1 font-semibold uppercase tracking-normal text-slate-600 hover:text-slate-900"
                     onClick={() =>
                       setAuxSort((prev) =>
-                        prev.key === "acceleratedLife"
-                          ? { key: "acceleratedLife", dir: prev.dir === "asc" ? "desc" : "asc" }
-                          : { key: "acceleratedLife", dir: "asc" },
+                        prev.key === "initialUsefulLife"
+                          ? { key: "initialUsefulLife", dir: prev.dir === "asc" ? "desc" : "asc" }
+                          : { key: "initialUsefulLife", dir: "asc" },
                       )
                     }
                   >
-                    VU inic. acel.
-                    {auxSort.key === "acceleratedLife" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                    Vida útil inicial (m)
+                    {auxSort.key === "initialUsefulLife" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
                   </button>
                 </th>
                 <th className="px-2 py-2 text-right">VU restante (m)</th>
@@ -655,7 +656,7 @@ export function PeriodsPage() {
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.depreciationForPeriod)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.accumulatedDepreciation)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.netBookValue)}</td>
-                    <td className="px-2 py-2 text-right">{s.asset.category.acceleratedLifeMonths}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{s.initialUsefulLifeMonths}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{s.monthsRemainingInYear}</td>
                   </tr>
                 ))}

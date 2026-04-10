@@ -16,7 +16,11 @@ import {
   backfillSnapshotsChronologically,
   hasRunCloseChainGapRisk,
 } from "../services/period-backfill.js";
-import { computeVuRestanteMeses } from "../services/effective-useful-life.js";
+import {
+  computeVuRestanteMeses,
+  declaredInitialUsefulLifeMonths,
+  type AssetWithCategory,
+} from "../services/effective-useful-life.js";
 
 export const periodsRoute = new Hono();
 
@@ -178,9 +182,12 @@ periodsRoute.get("/:id/snapshots", async (c) => {
   return c.json(
     rows.map((r) => {
       const { asset, ...rest } = r;
-      const monthsRemainingInYear = computeVuRestanteMeses(asset, period.year, period.month);
+      const assetForVu = asset as unknown as AssetWithCategory;
+      const initialUsefulLifeMonths = declaredInitialUsefulLifeMonths(assetForVu);
+      const monthsRemainingInYear = computeVuRestanteMeses(assetForVu, period.year, period.month);
       return {
         ...rest,
+        initialUsefulLifeMonths,
         monthsRemainingInYear,
         cmFactor: decToString(r.cmFactor),
         updatedGrossValue: decToString(r.updatedGrossValue),

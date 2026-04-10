@@ -248,6 +248,7 @@ export function AssetsPage() {
       api<Asset>(`/api/assets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["assets"] });
+      void qc.invalidateQueries({ queryKey: ["snapshots"] });
       setAssetToEdit(null);
       setEditForm(null);
       setEditStep("form");

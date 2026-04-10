@@ -1,14 +1,19 @@
 import type { Asset, UsefulLifeCategory } from "@prisma/client";
 import { monthsElapsedSinceAcquisitionMonth, usefulLifeMonthsRemaining } from "./asset-period-math.js";
+import { usefulLifeErrorForCategory } from "./useful-life-for-category.js";
 
 export type AssetWithCategory = Asset & { category: UsefulLifeCategory };
 
-/** Meses de vida útil aplicados al cálculo: override del activo o catálogo según régimen. */
-export function effectiveUsefulLifeMonths(asset: AssetWithCategory): number {
-  if (asset.usefulLifeMonths != null) return asset.usefulLifeMonths;
-  return asset.acceleratedDepreciation
-    ? asset.category.acceleratedLifeMonths
-    : asset.category.normalLifeMonths;
+/**
+ * Vida útil total del cronograma (depreciación, VU inicial en UI, VU restante):
+ * override válido (normal o acelerada del catálogo), o vida normal del rubro si no aplica.
+ */
+export function declaredInitialUsefulLifeMonths(asset: AssetWithCategory): number {
+  const u = asset.usefulLifeMonths;
+  if (u != null && usefulLifeErrorForCategory(asset.category, u) === null) {
+    return u;
+  }
+  return asset.category.normalLifeMonths;
 }
 
 /**
@@ -20,7 +25,7 @@ export function computeVuRestanteMeses(
   periodYear: number,
   periodMonth: number,
 ): number {
-  const life = effectiveUsefulLifeMonths(asset);
+  const life = declaredInitialUsefulLifeMonths(asset);
   const elapsed = monthsElapsedSinceAcquisitionMonth(
     new Date(asset.acquisitionDate),
     periodYear,

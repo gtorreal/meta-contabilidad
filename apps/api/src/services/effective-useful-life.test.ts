@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeVuRestanteMeses, effectiveUsefulLifeMonths } from "./effective-useful-life.js";
+import {
+  computeVuRestanteMeses,
+  declaredInitialUsefulLifeMonths,
+} from "./effective-useful-life.js";
 import type { Asset, UsefulLifeCategory } from "@prisma/client";
 
 function mockAsset(overrides: Partial<Asset> & { category: Partial<UsefulLifeCategory> }): Parameters<
@@ -24,26 +27,31 @@ function mockAsset(overrides: Partial<Asset> & { category: Partial<UsefulLifeCat
   return asset;
 }
 
-describe("effectiveUsefulLifeMonths", () => {
-  it("uses override when set", () => {
-    const a = mockAsset({ usefulLifeMonths: 12, category: {} });
-    expect(effectiveUsefulLifeMonths(a)).toBe(12);
+describe("declaredInitialUsefulLifeMonths", () => {
+  it("uses override when it matches normal or accelerated of category", () => {
+    expect(declaredInitialUsefulLifeMonths(mockAsset({ usefulLifeMonths: 72, category: {} }))).toBe(72);
+    expect(declaredInitialUsefulLifeMonths(mockAsset({ usefulLifeMonths: 24, category: {} }))).toBe(24);
   });
 
-  it("uses accelerated catalog when accelerated", () => {
+  it("ignores invalid stored months (e.g. Excel remanente) and uses normal catalog", () => {
+    const a = mockAsset({ usefulLifeMonths: 6, category: {} });
+    expect(declaredInitialUsefulLifeMonths(a)).toBe(72);
+  });
+
+  it("uses normal catalog when override null even if accelerated", () => {
     const a = mockAsset({ usefulLifeMonths: null, acceleratedDepreciation: true, category: {} });
-    expect(effectiveUsefulLifeMonths(a)).toBe(24);
+    expect(declaredInitialUsefulLifeMonths(a)).toBe(72);
   });
 });
 
 describe("computeVuRestanteMeses", () => {
-  it("returns full life in acquisition month", () => {
+  it("returns full declared life in acquisition month (accelerated flag ignored when usefulLifeMonths null)", () => {
     const a = mockAsset({ category: {} });
-    expect(computeVuRestanteMeses(a, 2025, 11)).toBe(24);
+    expect(computeVuRestanteMeses(a, 2025, 11)).toBe(72);
   });
 
   it("subtracts elapsed calendar months", () => {
     const a = mockAsset({ category: {} });
-    expect(computeVuRestanteMeses(a, 2025, 12)).toBe(23);
+    expect(computeVuRestanteMeses(a, 2025, 12)).toBe(71);
   });
 });

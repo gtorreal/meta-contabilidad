@@ -1,7 +1,7 @@
 import { prisma } from "../db.js";
 import { computeBudacomSnapshotFields } from "./budacom-snapshot.js";
 import {
-  effectiveUsefulLifeMonths,
+  declaredInitialUsefulLifeMonths,
   type AssetWithCategory,
 } from "./effective-useful-life.js";
 
@@ -86,7 +86,7 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
     const prev = await findPreviousSnapshot(asset.id, year, month);
     const prevAccumStr = prev ? prev.accumulatedDepreciation.toString() : null;
 
-    const lifeMonths = effectiveUsefulLifeMonths(asset);
+    const lifeMonths = declaredInitialUsefulLifeMonths(asset);
     const snapFields = computeBudacomSnapshotFields({
       historicalValueClp: asset.historicalValueClp.toString(),
       acquisitionDate: acq,
