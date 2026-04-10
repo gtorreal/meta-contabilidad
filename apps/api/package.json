@@ -14,6 +14,11 @@
     "prisma:seed": "prisma db seed",
     "prisma:studio": "prisma studio",
     "import:budacom": "tsx scripts/import-budacom-xlsx.ts",
+    "export:budacom-golden": "tsx scripts/export-budacom-golden.ts",
+    "apply:eqcomp-accelerated-backfill": "tsx scripts/apply-eqcomp-accelerated-backfill.ts",
+    "reconcile:budacom": "tsx scripts/reconcile-budacom-xlsx.ts",
+    "sync:budacom-snapshots": "tsx scripts/sync-budacom-snapshots-from-xlsx.ts",
+    "audit:periods": "tsx scripts/audit-period-snapshots.ts",
     "import:sii": "tsx scripts/import-sii-indices.ts",
     "import:ipc": "tsx scripts/import-ipc.ts"
   },

@@ -1,6 +1,9 @@
-import { Decimal } from "decimal.js";
 import type { Asset, UsefulLifeCategory } from "@prisma/client";
 import { prisma } from "../db.js";
+import { computeBudacomSnapshotFields } from "./budacom-snapshot.js";
+import { computeMonotonicIpcFactorFromMap, fetchIpcMapForCloseRange } from "./cm.js";
+
+export { monthsInclusiveFromAcquisition, monthsRemainingInYearForSnapshot } from "./asset-period-math.js";
 
 export function endOfUtcMonth(year: number, month: number): Date {
   return new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
@@ -22,19 +25,6 @@ export function countEligibleFromAssetRows(assets: AssetEligibilityRow[], year: 
   return assets.filter((a) => isActiveAssetEligibleForPeriodEnd(a, periodEnd)).length;
 }
 
-function monthsInclusiveFromAcquisition(acquisition: Date, periodYear: number, periodMonth: number): number {
-  const acqY = acquisition.getUTCFullYear();
-  const acqM = acquisition.getUTCMonth() + 1;
-  const endY = periodYear;
-  const endM = periodMonth;
-  const diff = (endY - acqY) * 12 + (endM - acqM) + 1;
-  return Math.max(diff, 0);
-}
-
-function monthsRemainingInCalendarYear(periodMonth: number): number {
-  return 13 - periodMonth;
-}
-
 type AssetWithCategory = Asset & { category: UsefulLifeCategory };
 
 /** Meses de vida útil aplicados al cálculo: override del activo o catálogo según régimen. */
@@ -43,17 +33,6 @@ export function effectiveUsefulLifeMonths(asset: AssetWithCategory): number {
   return asset.acceleratedDepreciation
     ? asset.category.acceleratedLifeMonths
     : asset.category.normalLifeMonths;
-}
-
-function monthsRemainingInYearForSnapshot(
-  periodMonth: number,
-  lifeMonths: number,
-  monthsHeldUncapped: number,
-): number {
-  const calendarRemaining = monthsRemainingInCalendarYear(periodMonth);
-  const elapsed = Math.min(monthsHeldUncapped, lifeMonths);
-  const remainingLife = Math.max(0, lifeMonths - elapsed);
-  return Math.min(calendarRemaining, remainingLife);
 }
 
 async function findPreviousSnapshot(assetId: string, year: number, month: number) {
@@ -105,36 +84,45 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
 
   const results = [];
 
+  if (eligible.length === 0) {
+    return { periodId: period.id, processed: 0, results: [] };
+  }
+
+  const minAcq = eligible.reduce(
+    (min, a) => (a.acquisitionDate < min ? a.acquisitionDate : min),
+    eligible[0].acquisitionDate,
+  );
+  const minY = minAcq.getUTCFullYear();
+  const minM = minAcq.getUTCMonth() + 1;
+  const ipcMap = await fetchIpcMapForCloseRange(minY, minM, year, month);
+
   for (const asset of eligible as AssetWithCategory[]) {
     const acq = new Date(asset.acquisitionDate);
+    const acqY = acq.getUTCFullYear();
+    const acqM = acq.getUTCMonth() + 1;
 
-    const historical = new Decimal(asset.historicalValueClp.toString());
-    /** Informe financiero: bruto y depreciación en valor histórico (sin CM por IPC). */
-    const f = new Decimal(1);
-    const updatedGross = historical.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
-    const lifeMonths = effectiveUsefulLifeMonths(asset);
-    const monthsHeldUncapped = monthsInclusiveFromAcquisition(acq, year, month);
-    let monthsHeld = monthsHeldUncapped;
-    if (monthsHeld > lifeMonths) monthsHeld = lifeMonths;
-
-    const monthsRemainingInYear = monthsRemainingInYearForSnapshot(
+    const { ipcAcquisition, ipcPeriodEffective } = computeMonotonicIpcFactorFromMap(
+      ipcMap,
+      acqY,
+      acqM,
+      year,
       month,
-      lifeMonths,
-      monthsHeldUncapped,
     );
 
-    const depHistoricalRaw = historical.div(lifeMonths).mul(monthsHeld);
-    const depHistorical = Decimal.min(depHistoricalRaw, historical).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
-    const depUpdated = depHistorical;
-    const depCmAdjustment = new Decimal(0);
-    const netToDepreciate = updatedGross.sub(depUpdated).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-    const netBookValue = updatedGross.sub(depUpdated).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
     const prev = await findPreviousSnapshot(asset.id, year, month);
-    const prevAccum = prev ? new Decimal(prev.accumulatedDepreciation.toString()) : new Decimal(0);
-    const depreciationForPeriod = depUpdated.sub(prevAccum).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const prevAccumStr = prev ? prev.accumulatedDepreciation.toString() : null;
+
+    const lifeMonths = effectiveUsefulLifeMonths(asset);
+    const snapFields = computeBudacomSnapshotFields({
+      historicalValueClp: asset.historicalValueClp.toString(),
+      acquisitionDate: acq,
+      lifeMonths,
+      periodYear: year,
+      periodMonth: month,
+      ipcAcquisition,
+      ipcPeriod: ipcPeriodEffective,
+      prevAccumulatedDepUpdated: prevAccumStr,
+    });
 
     const snap = await prisma.assetPeriodSnapshot.upsert({
       where: {
@@ -143,35 +131,35 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
       create: {
         assetId: asset.id,
         periodId: period.id,
-        cmFactor: f.toFixed(),
-        updatedGrossValue: updatedGross.toFixed(),
-        depHistorical: depHistorical.toFixed(),
-        depCmAdjustment: depCmAdjustment.toFixed(),
-        depUpdated: depUpdated.toFixed(),
-        netToDepreciate: netToDepreciate.toFixed(),
-        monthsRemainingInYear,
-        depreciationForPeriod: depreciationForPeriod.toFixed(),
-        accumulatedDepreciation: depUpdated.toFixed(),
-        netBookValue: netBookValue.toFixed(),
+        cmFactor: snapFields.cmFactor,
+        updatedGrossValue: snapFields.updatedGrossValue,
+        depHistorical: snapFields.depHistorical,
+        depCmAdjustment: snapFields.depCmAdjustment,
+        depUpdated: snapFields.depUpdated,
+        netToDepreciate: snapFields.netToDepreciate,
+        monthsRemainingInYear: snapFields.monthsRemainingInYear,
+        depreciationForPeriod: snapFields.depreciationForPeriod,
+        accumulatedDepreciation: snapFields.accumulatedDepreciation,
+        netBookValue: snapFields.netBookValue,
       },
       update: {
-        cmFactor: f.toFixed(),
-        updatedGrossValue: updatedGross.toFixed(),
-        depHistorical: depHistorical.toFixed(),
-        depCmAdjustment: depCmAdjustment.toFixed(),
-        depUpdated: depUpdated.toFixed(),
-        netToDepreciate: netToDepreciate.toFixed(),
-        monthsRemainingInYear,
-        depreciationForPeriod: depreciationForPeriod.toFixed(),
-        accumulatedDepreciation: depUpdated.toFixed(),
-        netBookValue: netBookValue.toFixed(),
+        cmFactor: snapFields.cmFactor,
+        updatedGrossValue: snapFields.updatedGrossValue,
+        depHistorical: snapFields.depHistorical,
+        depCmAdjustment: snapFields.depCmAdjustment,
+        depUpdated: snapFields.depUpdated,
+        netToDepreciate: snapFields.netToDepreciate,
+        monthsRemainingInYear: snapFields.monthsRemainingInYear,
+        depreciationForPeriod: snapFields.depreciationForPeriod,
+        accumulatedDepreciation: snapFields.accumulatedDepreciation,
+        netBookValue: snapFields.netBookValue,
       },
     });
 
     results.push({
       assetId: asset.id,
       snapshotId: snap.id,
-      cmFactor: "1",
+      cmFactor: snapFields.cmFactor,
     });
   }
 

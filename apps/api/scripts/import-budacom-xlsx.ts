@@ -13,6 +13,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
+import { Decimal } from "decimal.js";
 import { PrismaClient } from "@prisma/client";
 
 const require = createRequire(import.meta.url);
@@ -119,6 +120,27 @@ function decStr(v: unknown, fallback = "0"): string {
   const n = toNum(v);
   if (n === null) return fallback;
   return n.toFixed(2);
+}
+
+function cmFactorFromRow(M: HeaderMap, row: unknown[]): string {
+  const col = M["CM"];
+  if (col === undefined) return "1.0000000000";
+  const n = toNum(getCell(row, col));
+  if (n === null) return "1.0000000000";
+  return new Decimal(n).toDecimalPlaces(10, Decimal.ROUND_HALF_UP).toFixed(10);
+}
+
+function depCmAdjustmentFromRow(M: HeaderMap, row: unknown[]): string {
+  const depHistoricalStr = decStr(getCell(row, M["DEP HISTORICA"]));
+  const depUpdatedStr = decStr(getCell(row, M["DEP ACTUALIZADA"]));
+  const cmDepCol = M["CM DEP"];
+  if (cmDepCol !== undefined && toNum(getCell(row, cmDepCol)) !== null) {
+    return decStr(getCell(row, cmDepCol));
+  }
+  return new Decimal(depUpdatedStr)
+    .sub(new Decimal(depHistoricalStr))
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+    .toFixed(2);
 }
 
 function readDataRow(sheet: XLSX.WorkSheet, R: number, maxC: number): unknown[] {
@@ -293,7 +315,8 @@ async function main() {
         historicalValueClp: m.hist.toFixed(2),
         creditAfPercent: m.credit !== null ? String(m.credit) : undefined,
         usefulLifeMonths: m.usefulLifeMonths ?? undefined,
-        acceleratedDepreciation: false,
+        /** Sin «VIDA UTIL» en Apertura: Budacom/SII ítem 23 suele usar vida acelerada del catálogo (24 m tras este import). Meses explícitos en Apertura se respetan. */
+        acceleratedDepreciation: m.usefulLifeMonths == null && cat.code === "EQ_COMP",
         status: "ACTIVE",
       },
     });
@@ -340,10 +363,10 @@ async function main() {
         data: {
           assetId,
           periodId: period.id,
-          cmFactor: "1",
+          cmFactor: cmFactorFromRow(M, row),
           updatedGrossValue: decStr(getCell(row, M["VALOR ACTUALIZADO"])),
           depHistorical: decStr(getCell(row, M["DEP HISTORICA"])),
-          depCmAdjustment: "0.00",
+          depCmAdjustment: depCmAdjustmentFromRow(M, row),
           depUpdated: decStr(getCell(row, M["DEP ACTUALIZADA"])),
           netToDepreciate: decStr(getCell(row, M["VALOR NETO A DEPRECIAR"])),
           monthsRemainingInYear: monthsRem,

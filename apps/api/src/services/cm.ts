@@ -1,9 +1,60 @@
 import { Decimal } from "decimal.js";
-import { getLatestIpcInMonth } from "./indices.js";
+import { iterateCalendarMonthsInclusive } from "./asset-period-math.js";
+import { fetchIpcMonthlyValueMap } from "./indices.js";
+
+const ymKey = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
 
 /**
- * Factor de corrección monetaria simplificado: IPC(cierre) / IPC(mes de adquisición).
- * La normativa detallada se documenta en docs/adr; la fuente de datos es siempre EconomicIndex.
+ * IPC “efectivo” al cierre: máximo del índice oficial desde el mes de adquisición hasta el mes del período (inclusive).
+ * Evita que un IPC mensual que baja (p. ej. nov > dic) reduzca el bruto actualizado y genere depreciaciones del mes negativas,
+ * alineado con la lógica típica de planillas que no revierten CM por oscilaciones del índice mes a mes.
+ */
+export function computeMonotonicIpcFactorFromMap(
+  ipcByYm: Map<string, string>,
+  acquisitionYear: number,
+  acquisitionMonth: number,
+  periodYear: number,
+  periodMonth: number,
+): { factor: string; ipcAcquisition: string; ipcPeriodEffective: string } {
+  const acqK = ymKey(acquisitionYear, acquisitionMonth);
+  const ipcAcqStr = ipcByYm.get(acqK);
+  if (!ipcAcqStr) {
+    throw new Error(`No hay IPC en la base para el mes de adquisición ${acqK}.`);
+  }
+  const a = new Decimal(ipcAcqStr);
+  if (a.isZero()) {
+    throw new Error("IPC de adquisición no puede ser cero.");
+  }
+
+  let runningMax = new Decimal(0);
+  for (const { year: y, month: m } of iterateCalendarMonthsInclusive(
+    acquisitionYear,
+    acquisitionMonth,
+    periodYear,
+    periodMonth,
+  )) {
+    const v = ipcByYm.get(ymKey(y, m));
+    if (!v) {
+      throw new Error(
+        `No hay IPC en la base para ${ymKey(y, m)} (rango adquisición → período). ` +
+          `Cargue la serie IPC (índices o import:ipc).`,
+      );
+    }
+    const d = new Decimal(v);
+    if (d.gt(runningMax)) runningMax = d;
+  }
+
+  const factor = runningMax.div(a).toDecimalPlaces(10, Decimal.ROUND_HALF_UP);
+  return {
+    factor: factor.toFixed(10),
+    ipcAcquisition: a.toFixed(),
+    ipcPeriodEffective: runningMax.toFixed(),
+  };
+}
+
+/**
+ * Factor CM = IPC_efectivo(período) / IPC(adquisición), con IPC_efectivo = max mensual desde adquisición hasta período.
+ * La fuente de datos es siempre `EconomicIndex` (ver ADR).
  */
 export async function computeCmFactorFromIpc(
   acquisitionYear: number,
@@ -11,32 +62,21 @@ export async function computeCmFactorFromIpc(
   periodYear: number,
   periodMonth: number,
 ): Promise<{ factor: string; ipcAcquisition: string; ipcPeriod: string }> {
-  const [ipcAcq, ipcPer] = await Promise.all([
-    getLatestIpcInMonth(acquisitionYear, acquisitionMonth),
-    getLatestIpcInMonth(periodYear, periodMonth),
-  ]);
-
-  if (!ipcAcq || !ipcPer) {
-    const ym = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
-    const parts: string[] = [];
-    if (!ipcAcq) parts.push(`mes de adquisición ${ym(acquisitionYear, acquisitionMonth)}`);
-    if (!ipcPer) parts.push(`período de cierre ${ym(periodYear, periodMonth)}`);
-    throw new Error(
-      `No hay fila IPC en la base para: ${parts.join(" ni para ")}. ` +
-        `En la planilla Índices económicos use «Cargar IPC desde archivo (repo)», o en la API ejecute \`pnpm import:ipc\` o \`prisma db seed\` (carga \`apps/api/data/ipc-monthly.json\`).`,
-    );
-  }
-
-  const a = new Decimal(ipcAcq.value.toString());
-  const p = new Decimal(ipcPer.value.toString());
-  if (a.isZero()) {
-    throw new Error("IPC de adquisición no puede ser cero.");
-  }
-
-  const factor = p.div(a).toDecimalPlaces(10, Decimal.ROUND_HALF_UP);
+  const map = await fetchIpcMonthlyValueMap(acquisitionYear, acquisitionMonth, periodYear, periodMonth);
+  const r = computeMonotonicIpcFactorFromMap(map, acquisitionYear, acquisitionMonth, periodYear, periodMonth);
   return {
-    factor: factor.toFixed(),
-    ipcAcquisition: a.toFixed(),
-    ipcPeriod: p.toFixed(),
+    factor: r.factor,
+    ipcAcquisition: r.ipcAcquisition,
+    ipcPeriod: r.ipcPeriodEffective,
   };
+}
+
+/** Para tests o llamadas que ya tienen el mapa cargado (p. ej. cierre en lote). */
+export async function fetchIpcMapForCloseRange(
+  minAcquisitionYear: number,
+  minAcquisitionMonth: number,
+  periodYear: number,
+  periodMonth: number,
+): Promise<Map<string, string>> {
+  return fetchIpcMonthlyValueMap(minAcquisitionYear, minAcquisitionMonth, periodYear, periodMonth);
 }

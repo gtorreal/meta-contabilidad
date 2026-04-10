@@ -21,6 +21,34 @@ export async function getLatestIpcInMonth(year: number, month: number) {
   });
 }
 
+const ymKey = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
+
+/**
+ * Último valor IPC por mes civil en [fromYear,fromMonth] … [toYear,toMonth] (inclusive).
+ * Si falta algún mes en la BD, la clave no estará en el map (el llamador valida).
+ */
+export async function fetchIpcMonthlyValueMap(
+  fromYear: number,
+  fromMonth: number,
+  toYear: number,
+  toMonth: number,
+): Promise<Map<string, string>> {
+  const start = monthStart(fromYear, fromMonth);
+  const end = monthEnd(toYear, toMonth);
+  const rows = await prisma.economicIndex.findMany({
+    where: { type: "IPC", date: { gte: start, lte: end } },
+    orderBy: { date: "asc" },
+  });
+  const map = new Map<string, string>();
+  for (const r of rows) {
+    const d = r.date;
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    map.set(ymKey(y, m), r.value.toString());
+  }
+  return map;
+}
+
 export async function getUsdObservedOnDate(date: Date) {
   const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   return prisma.economicIndex.findUnique({

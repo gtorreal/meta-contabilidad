@@ -486,6 +486,11 @@ export function PeriodsPage() {
                 </tr>
               </tbody>
             </table>
+            <p className="mt-3 max-w-2xl text-xs text-slate-600">
+              Total = suma de «Dep. mes». Si no calza con Budacom: revise en Activos que la vida útil coincida (p. ej.
+              acelerada 24 meses ítem 23); import sin «VIDA UTIL» en Apertura asume acelerada para EQ_COMP. Luego
+              regenere la cadena de snapshots con IPC hasta este período.
+            </p>
             {!snapshotsPending && snapshots.length === 0 && (
               <p className="mt-2 text-xs text-slate-500">Sin depreciación en este período (auxiliar vacío).</p>
             )}
