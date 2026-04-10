@@ -713,7 +713,7 @@ export function PeriodsPage() {
                 </th>
                 <th className="px-2 py-2 text-right">Dep. mes</th>
                 <th className="px-2 py-2 text-right">Dep. acum.</th>
-                <th className="px-2 py-2 text-right">Neto</th>
+                <th className="px-2 py-2 text-right">Valor Residual</th>
                 <th
                   className="px-2 py-2 text-right"
                   aria-sort={
