@@ -2,7 +2,9 @@ import { load } from "cheerio";
 import type { EconomicIndexType } from "@prisma/client";
 import { prisma } from "../db.js";
 
-const MIN_DATE_UTC = new Date(Date.UTC(2025, 0, 1));
+/** Inicio de la ventana de ingesta SII (UF y dólar observado). */
+const SII_SYNC_MIN_YEAR = 2024;
+const MIN_DATE_UTC = new Date(Date.UTC(SII_SYNC_MIN_YEAR, 0, 1));
 
 const MONTH_BY_DIV_ID: Record<string, number> = {
   enero: 1,
@@ -140,13 +142,13 @@ export type SiiSyncResult = {
 };
 
 /**
- * Descarga UF y dólar observado desde el SII (2025-01-01 … hoy UTC) y hace upsert en EconomicIndex.
+ * Descarga UF y dólar observado desde el SII (desde 2024-01-01 UTC … hoy UTC) y hace upsert en EconomicIndex.
  */
 export async function syncSiiUsdAndUf(): Promise<SiiSyncResult> {
   const maxDate = todayUtcDateOnly();
   const yEnd = maxDate.getUTCFullYear();
   const years: number[] = [];
-  for (let y = 2025; y <= yEnd; y++) years.push(y);
+  for (let y = SII_SYNC_MIN_YEAR; y <= yEnd; y++) years.push(y);
 
   const byYear: SiiSyncResult["byYear"] = [];
   let totalUsd = 0;

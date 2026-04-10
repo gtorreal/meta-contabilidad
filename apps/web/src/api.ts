@@ -10,14 +10,37 @@ function parseResponseBody(text: string): { json: true; value: unknown } | { jso
   }
 }
 
+function isLikelyNetworkFailure(e: unknown): boolean {
+  if (e instanceof TypeError) return true;
+  if (e instanceof Error) {
+    const m = e.message.toLowerCase();
+    return m.includes("failed to fetch") || m.includes("networkerror") || m.includes("load failed");
+  }
+  return false;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (e) {
+    if (isLikelyNetworkFailure(e)) {
+      const hint =
+        base === ""
+          ? "Asegúrese de tener la API en http://localhost:8787 (el proxy de Vite reenvía /api)."
+          : `La URL de la API es ${base} (variable VITE_API_URL).`;
+      throw new Error(
+        `No se pudo conectar con el servidor. ${hint} Arranque la API con \`pnpm dev:api\` o todo el stack con \`pnpm dev\` desde la raíz del monorepo.`,
+      );
+    }
+    throw e;
+  }
   if (res.status === 204) return undefined as T;
   const raw = await res.text();
   const parsed = parseResponseBody(raw);

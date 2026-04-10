@@ -28,7 +28,11 @@ type Asset = {
 
 export function AssetsPage() {
   const qc = useQueryClient();
-  const { data: categories = [] } = useQuery({
+  const {
+    data: categories = [],
+    error: categoriesError,
+    isPending: categoriesPending,
+  } = useQuery({
     queryKey: ["categories"],
     queryFn: () => api<Category[]>("/api/categories"),
   });
@@ -140,9 +144,16 @@ export function AssetsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Activos fijos</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Histórico en CLP; USD se convierte con dólar observado del día de adquisición (serie en Índices).
+          Histórico en CLP; USD se convierte con dólar observado del día de adquisición (serie en Índices). La tabla
+          abajo solo muestra bienes ya creados; si está vacía, aún no hay altas.
         </p>
       </div>
+
+      {categoriesError && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          No se pudieron cargar categorías: {(categoriesError as Error).message}
+        </div>
+      )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-800">Nuevo activo</h2>
@@ -257,7 +268,7 @@ export function AssetsPage() {
           <div className="flex items-end">
             <button
               type="submit"
-              disabled={create.isPending || !categories.length}
+              disabled={create.isPending || categoriesPending || !categories.length}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {create.isPending ? "Guardando…" : "Crear"}
@@ -343,7 +354,10 @@ export function AssetsPage() {
           </tbody>
         </table>
         {!assetsPending && !assets.length && !assetsError && (
-          <p className="p-4 text-sm text-slate-500">No hay activos aún.</p>
+          <p className="p-4 text-sm text-slate-500">
+            No hay activos dados de alta. Complete el formulario de arriba y pulse Crear, o compruebe que la API y la
+            base de datos están en marcha si esperaba ver datos.
+          </p>
         )}
       </section>
 

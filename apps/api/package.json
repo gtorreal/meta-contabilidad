@@ -14,7 +14,8 @@
     "prisma:seed": "prisma db seed",
     "prisma:studio": "prisma studio",
     "import:budacom": "tsx scripts/import-budacom-xlsx.ts",
-    "import:sii": "tsx scripts/import-sii-indices.ts"
+    "import:sii": "tsx scripts/import-sii-indices.ts",
+    "import:ipc": "tsx scripts/import-ipc.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

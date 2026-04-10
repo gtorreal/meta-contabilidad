@@ -17,8 +17,13 @@ export async function computeCmFactorFromIpc(
   ]);
 
   if (!ipcAcq || !ipcPer) {
+    const ym = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
+    const parts: string[] = [];
+    if (!ipcAcq) parts.push(`mes de adquisición ${ym(acquisitionYear, acquisitionMonth)}`);
+    if (!ipcPer) parts.push(`período de cierre ${ym(periodYear, periodMonth)}`);
     throw new Error(
-      "Faltan valores IPC en EconomicIndex para el mes de adquisición o el período de cierre. Ingrese IPC mensual para ambos meses.",
+      `No hay fila IPC en la base para: ${parts.join(" ni para ")}. ` +
+        `En la planilla Índices económicos use «Cargar IPC desde archivo (repo)», o en la API ejecute \`pnpm import:ipc\` o \`prisma db seed\` (carga \`apps/api/data/ipc-monthly.json\`).`,
     );
   }
 

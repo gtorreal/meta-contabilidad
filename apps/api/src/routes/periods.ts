@@ -1,5 +1,9 @@
 import { Hono } from "hono";
-import { periodReopenSchema, runCloseMonthSchema } from "@meta-contabilidad/shared";
+import {
+  backfillSnapshotsSchema,
+  periodReopenSchema,
+  runCloseMonthSchema,
+} from "@meta-contabilidad/shared";
 import { prisma } from "../db.js";
 import { decToString } from "../serialize.js";
 import { requireAdmin } from "../middleware/admin.js";
@@ -8,6 +12,10 @@ import {
   countEligibleFromAssetRows,
   runCloseMonthForPeriod,
 } from "../services/close-month.js";
+import {
+  backfillSnapshotsChronologically,
+  hasRunCloseChainGapRisk,
+} from "../services/period-backfill.js";
 
 export const periodsRoute = new Hono();
 
@@ -36,7 +44,29 @@ periodsRoute.post("/run-close", async (c) => {
     return c.json({ error: body.error.flatten() }, 400);
   }
   try {
+    if (await hasRunCloseChainGapRisk(body.data.year, body.data.month)) {
+      return c.json(
+        {
+          error:
+            "Hay activos con snapshot en un mes posterior pero sin ningún mes anterior: calcular este mes dejaría mal el «dep. mes». Use «Generar cadena desde primera compra» o genere los meses previos en orden, luego vuelva a calcular los posteriores.",
+        },
+        409,
+      );
+    }
     const result = await runCloseMonthForPeriod(body.data.year, body.data.month);
+    return c.json(result);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "Error" }, 400);
+  }
+});
+
+periodsRoute.post("/backfill-snapshots", async (c) => {
+  const body = backfillSnapshotsSchema.safeParse(await c.req.json());
+  if (!body.success) {
+    return c.json({ error: body.error.flatten() }, 400);
+  }
+  try {
+    const result = await backfillSnapshotsChronologically(body.data.untilYear, body.data.untilMonth);
     return c.json(result);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "Error" }, 400);
@@ -77,13 +107,16 @@ periodsRoute.post("/:id/close", async (c) => {
 
 periodsRoute.delete("/:id", async (c) => {
   const id = c.req.param("id");
-  const period = await prisma.accountingPeriod.findUnique({ where: { id } });
+  const period = await prisma.accountingPeriod.findUnique({
+    where: { id },
+    include: { _count: { select: { snapshots: true } } },
+  });
   if (!period) return c.json({ error: "No encontrado" }, 404);
-  if (period.status === "CLOSED") {
+  if (period.status === "CLOSED" && period._count.snapshots > 0) {
     return c.json(
       {
         error:
-          "No se puede eliminar un período cerrado. Reábralo con Admin (X-Admin-Key) y luego elimínelo mientras esté abierto.",
+          "No se puede eliminar un período cerrado con snapshots. Reábralo con Admin (X-Admin-Key) y elimínelo mientras esté abierto.",
       },
       409,
     );

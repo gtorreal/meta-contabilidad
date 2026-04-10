@@ -61,3 +61,47 @@ export const runCloseMonthSchema = z.object({
   year: z.number().int().min(2000).max(2100),
   month: z.number().int().min(1).max(12),
 });
+
+/** Cadena de snapshots desde MIN(acquisitionDate) de activos ACTIVE hasta el mes indicado (inclusive). */
+export const backfillSnapshotsSchema = z.object({
+  untilYear: z.number().int().min(2000).max(2100),
+  untilMonth: z.number().int().min(1).max(12),
+});
+
+/** Query string: `year` requerido (cuatro dígitos); `categoryCodes` opcional (códigos separados por coma). */
+export const fixedAssetMovementQuerySchema = z.object({
+  year: z
+    .string()
+    .regex(/^\d{4}$/, "year debe ser un año de cuatro dígitos")
+    .transform((s) => parseInt(s, 10))
+    .pipe(z.number().int().min(2000).max(2100)),
+  categoryCodes: z.string().optional(),
+});
+
+export const fixedAssetMovementColumnSchema = z.object({
+  rightOfUse: z.string(),
+  officeEquipment: z.string(),
+  total: z.string(),
+});
+
+export const fixedAssetMovementReportRowSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  kind: z.enum(["data", "section"]),
+  columns: fixedAssetMovementColumnSchema,
+});
+
+export const fixedAssetMovementReportSchema = z.object({
+  year: z.number(),
+  currency: z.literal("CLP"),
+  categoryCodes: z.array(z.string()),
+  rows: z.array(fixedAssetMovementReportRowSchema),
+  reconciliation: z.object({
+    grossClosingFromSnapshots: z.string(),
+    grossMovementSubtotal: z.string(),
+    grossDifference: z.string(),
+  }),
+  warnings: z.array(z.string()),
+});
+
+export type FixedAssetMovementReportDto = z.infer<typeof fixedAssetMovementReportSchema>;

@@ -4,15 +4,17 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "pnpm --filter @meta-contabilidad/shared build && pnpm --parallel --filter @meta-contabilidad/api --filter @meta-contabilidad/web run dev",
+    "dev:local": "pnpm db:up && pnpm db:wait && pnpm db:generate && pnpm db:migrate && pnpm exec dotenv -e .env -- pnpm --filter @meta-contabilidad/api prisma:seed && pnpm dev",
     "dev:api": "pnpm --filter @meta-contabilidad/api dev",
     "dev:web": "pnpm --filter @meta-contabilidad/web dev",
     "build": "pnpm run -r build",
     "lint": "pnpm run -r lint",
     "test": "pnpm run -r test",
     "db:up": "docker compose up -d postgres",
+    "db:wait": "bash scripts/wait-postgres.sh",
     "db:generate": "pnpm --filter @meta-contabilidad/api prisma:generate",
-    "db:migrate": "dotenv -e .env -- pnpm --filter @meta-contabilidad/api exec prisma migrate deploy",
-    "db:migrate:dev": "dotenv -e .env -- pnpm --filter @meta-contabilidad/api exec prisma migrate dev"
+    "db:migrate": "pnpm exec dotenv -e .env -- pnpm --filter @meta-contabilidad/api exec prisma migrate deploy",
+    "db:migrate:dev": "pnpm exec dotenv -e .env -- pnpm --filter @meta-contabilidad/api exec prisma migrate dev"
   },
   "devDependencies": {
     "dotenv-cli": "^8.0.0"

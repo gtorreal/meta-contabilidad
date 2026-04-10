@@ -1,9 +1,8 @@
 import { Decimal } from "decimal.js";
 import type { Asset, UsefulLifeCategory } from "@prisma/client";
 import { prisma } from "../db.js";
-import { computeCmFactorFromIpc } from "./cm.js";
 
-function endOfUtcMonth(year: number, month: number): Date {
+export function endOfUtcMonth(year: number, month: number): Date {
   return new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 }
 
@@ -108,13 +107,11 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
 
   for (const asset of eligible as AssetWithCategory[]) {
     const acq = new Date(asset.acquisitionDate);
-    const acqY = acq.getUTCFullYear();
-    const acqM = acq.getUTCMonth() + 1;
 
     const historical = new Decimal(asset.historicalValueClp.toString());
-    const { factor, ipcAcquisition, ipcPeriod } = await computeCmFactorFromIpc(acqY, acqM, year, month);
-    const f = new Decimal(factor);
-    const updatedGross = historical.mul(f).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    /** Informe financiero: bruto y depreciación en valor histórico (sin CM por IPC). */
+    const f = new Decimal(1);
+    const updatedGross = historical.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     const lifeMonths = effectiveUsefulLifeMonths(asset);
     const monthsHeldUncapped = monthsInclusiveFromAcquisition(acq, year, month);
@@ -130,10 +127,8 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
     const depHistoricalRaw = historical.div(lifeMonths).mul(monthsHeld);
     const depHistorical = Decimal.min(depHistoricalRaw, historical).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-    const depUpdatedRaw = updatedGross.div(lifeMonths).mul(monthsHeld);
-    const depUpdated = Decimal.min(depUpdatedRaw, updatedGross).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
-    const depCmAdjustment = depUpdated.sub(depHistorical).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const depUpdated = depHistorical;
+    const depCmAdjustment = new Decimal(0);
     const netToDepreciate = updatedGross.sub(depUpdated).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     const netBookValue = updatedGross.sub(depUpdated).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
@@ -176,9 +171,7 @@ export async function runCloseMonthForPeriod(year: number, month: number) {
     results.push({
       assetId: asset.id,
       snapshotId: snap.id,
-      cmFactor: factor,
-      ipcAcquisition,
-      ipcPeriod,
+      cmFactor: "1",
     });
   }
 

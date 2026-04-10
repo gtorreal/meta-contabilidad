@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { adminHeaders, api } from "../api";
+import { useState } from "react";
+import { api } from "../api";
 import { formatClpInteger, formatIpcInteger } from "../formatCurrency";
 
 type IndexRow = { id: string; type: string; date: string; value: string };
 
-const PAGE_SIZE = 50;
+/** Una sola petición trae toda la serie (API permite hasta 50k filas por tipo). */
+const LIST_PAGE_SIZE = 50_000;
 
 type IndicesPageResponse = {
   items: IndexRow[];
@@ -21,33 +22,36 @@ type SiiSyncResult = {
   byYear: Array<{ year: number; USD_OBSERVED: number; UF: number }>;
 };
 
+type IpcBundleSyncResult = {
+  upserted: number;
+  firstDate: string;
+  lastDate: string;
+  asOf?: string;
+};
+
 export function IndicesPage() {
   const qc = useQueryClient();
-  const [type, setType] = useState<"USD_OBSERVED" | "UF" | "IPC">("USD_OBSERVED");
-  const [page, setPage] = useState(1);
+  /** IPC suele venir del seed; mostrarlo primero evita la sensación de “todo vacío”. */
+  const [type, setType] = useState<"USD_OBSERVED" | "UF" | "IPC">("IPC");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [value, setValue] = useState("");
   const [syncInfo, setSyncInfo] = useState<string | null>(null);
+  const [ipcBundleInfo, setIpcBundleInfo] = useState<string | null>(null);
 
   const siiYear = new Date().getFullYear();
 
   const { data, error } = useQuery({
-    queryKey: ["indices", type, page],
+    queryKey: ["indices", type],
     queryFn: () =>
       api<IndicesPageResponse>(
-        `/api/indices?type=${type}&page=${page}&pageSize=${PAGE_SIZE}`,
+        `/api/indices?type=${type}&page=1&pageSize=${LIST_PAGE_SIZE}`,
       ),
   });
 
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const fromIdx = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const toIdx = Math.min(page * PAGE_SIZE, total);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+  const shown = rows.length;
+  const truncated = total > shown;
 
   const create = useMutation({
     mutationFn: () =>
@@ -70,7 +74,6 @@ export function IndicesPage() {
     mutationFn: () =>
       api<SiiSyncResult>("/api/indices/sync-sii", {
         method: "POST",
-        headers: adminHeaders(),
         body: JSON.stringify({}),
       }),
     onSuccess: (r) => {
@@ -84,6 +87,22 @@ export function IndicesPage() {
     onError: () => setSyncInfo(null),
   });
 
+  const syncIpcBundle = useMutation({
+    mutationFn: () =>
+      api<IpcBundleSyncResult>("/api/indices/sync-ipc-bundle", {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    onSuccess: (r) => {
+      const meta = r.asOf ? ` (archivo al ${r.asOf})` : "";
+      setIpcBundleInfo(
+        `${r.upserted} meses IPC: ${r.firstDate} → ${r.lastDate}${meta}. La tabla se actualiza abajo.`,
+      );
+      void qc.invalidateQueries({ queryKey: ["indices", "IPC"] });
+    },
+    onError: () => setIpcBundleInfo(null),
+  });
+
   const isSiiSeries = type === "USD_OBSERVED" || type === "UF";
 
   return (
@@ -91,17 +110,20 @@ export function IndicesPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Índices económicos</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Dólar observado y UF se sincronizan desde el SII. IPC es mensual e ingreso manual. USD→CLP y CM
-          leen solo de esta fuente.
+          <span className="font-medium">IPC</span> mensual: serie en repo desde{" "}
+          <span className="font-medium">enero 2017</span> (
+          <code className="text-xs">apps/api/data/ipc-monthly.json</code>); cárguela con el botón de abajo,{" "}
+          <code className="text-xs">pnpm import:ipc</code> o el seed.{" "}
+          <span className="font-medium">Dólar</span> y <span className="font-medium">UF</span> son diarios y vienen del
+          SII (botón o <code className="text-xs">AUTO_SYNC_SII_ON_STARTUP</code>). USD→CLP y CM leen solo de aquí.
         </p>
       </div>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-800">UF y dólar observado (SII)</h2>
         <p className="mt-1 text-xs text-slate-600">
-          Descarga las tablas oficiales y completa o actualiza registros hasta hoy. Requiere la misma clave
-          que reapertura de períodos: <code className="rounded bg-slate-100 px-1">VITE_ADMIN_API_KEY</code>{" "}
-          → header <code className="rounded bg-slate-100 px-1">X-Admin-Key</code>.
+          Incluye años 2024 en adelante. Con <code className="rounded bg-slate-100 px-1">AUTO_SYNC_SII_ON_STARTUP=true</code> en{" "}
+          <code className="rounded bg-slate-100 px-1">.env</code> la API también sincroniza al arrancar (requiere red).
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
@@ -140,6 +162,31 @@ export function IndicesPage() {
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800">IPC mensual (enero 2017 en adelante)</h2>
+        <p className="mt-1 text-xs text-slate-600">
+          Vuelca en la base la serie versionada del repositorio (misma fuente que el seed). Útil si la planilla IPC no
+          muestra meses desde 2017-01.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={syncIpcBundle.isPending}
+            onClick={() => {
+              setIpcBundleInfo(null);
+              syncIpcBundle.mutate();
+            }}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {syncIpcBundle.isPending ? "Cargando IPC…" : "Cargar IPC desde archivo (repo)"}
+          </button>
+        </div>
+        {syncIpcBundle.isError && (
+          <p className="mt-2 text-sm text-red-600">{(syncIpcBundle.error as Error).message}</p>
+        )}
+        {ipcBundleInfo && <p className="mt-2 text-sm text-emerald-800">{ipcBundleInfo}</p>}
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-xs font-medium text-slate-600">
             Serie
@@ -148,8 +195,8 @@ export function IndicesPage() {
               value={type}
               onChange={(e) => {
                 setType(e.target.value as typeof type);
-                setPage(1);
                 setSyncInfo(null);
+                setIpcBundleInfo(null);
               }}
             >
               <option value="USD_OBSERVED">Dólar observado</option>
@@ -200,9 +247,9 @@ export function IndicesPage() {
         )}
       </section>
 
-      <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <section className="max-h-[min(70vh,56rem)] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-100 text-xs font-semibold uppercase text-slate-600">
+          <thead className="sticky top-0 z-10 bg-slate-100 text-xs font-semibold uppercase text-slate-600 shadow-sm">
             <tr>
               <th className="px-3 py-2">Fecha</th>
               <th className="px-3 py-2 text-right">Valor</th>
@@ -232,33 +279,32 @@ export function IndicesPage() {
           </tbody>
         </table>
         {error && <p className="p-3 text-sm text-red-600">{(error as Error).message}</p>}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-3 py-2 text-sm text-slate-600">
-          <span>
-            {total === 0
-              ? "Sin registros"
-              : `Mostrando ${fromIdx}–${toIdx} de ${total} (${PAGE_SIZE} por página)`}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-40"
-            >
-              Anterior
-            </button>
-            <span className="text-xs text-slate-500">
-              Página {page} de {totalPages}
-            </span>
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-              className="rounded border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-40"
-            >
-              Siguiente
-            </button>
-          </div>
+        <div className="border-t border-slate-100 px-3 py-2 text-sm text-slate-600">
+            {total === 0 ? (
+            isSiiSeries ? (
+              <>
+                Sin registros — pulse «Actualizar desde SII», reinicie la API con{" "}
+                <code className="text-xs">AUTO_SYNC_SII_ON_STARTUP=true</code>, o{" "}
+                <code className="text-xs">pnpm import:sii</code> (requiere red).
+              </>
+            ) : type === "IPC" ? (
+              <>
+                Sin registros — pulse «Cargar IPC desde archivo (repo)» arriba, ejecute{" "}
+                <code className="text-xs">pnpm import:ipc</code> en la API, o <code className="text-xs">prisma:seed</code>
+                .
+              </>
+            ) : (
+              "Sin registros"
+            )
+          ) : truncated ? (
+            <>
+              Mostrando {shown} de {total} (límite {LIST_PAGE_SIZE.toLocaleString("es-CL")}; hay más filas en base).
+            </>
+          ) : (
+            <>
+              {total.toLocaleString("es-CL")} registro{total === 1 ? "" : "s"} (fecha más reciente arriba).
+            </>
+          )}
         </div>
       </section>
     </div>

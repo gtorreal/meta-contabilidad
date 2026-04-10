@@ -1,7 +1,13 @@
 /**
  * Importa activos (hoja Apertura) y snapshots mensuales (hojas YYYY_MM) desde el Excel Budacom.
  *
- * Uso: pnpm exec tsx scripts/import-budacom-xlsx.ts [ruta-al-xlsx]
+ * Por defecto NO borra datos: solo importa si no hay activos ni snapshots, y si no existen
+ * períodos contables para los meses del Excel.
+ *
+ * Uso:
+ *   pnpm exec tsx scripts/import-budacom-xlsx.ts [--replace-data] [ruta-al-xlsx]
+ *
+ *   --replace-data  Borra AuditLog, snapshots, todos los períodos contables y activos, luego importa.
  */
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -25,6 +31,23 @@ const DEFAULT_XLSX = path.join(
   "Downloads",
   "Activo fijo Financiero Budacom 2025.xlsx",
 );
+
+function parseCli(argv: string[]): { replaceData: boolean; xlsxPath: string } {
+  const args = argv.slice(2);
+  let replaceData = false;
+  const positional: string[] = [];
+  for (const a of args) {
+    if (a === "--replace-data" || a === "--replace") {
+      replaceData = true;
+    } else if (a.startsWith("-")) {
+      console.warn(`Opción desconocida (ignorada): ${a}`);
+    } else {
+      positional.push(a);
+    }
+  }
+  const xlsxPath = positional[0] ?? DEFAULT_XLSX;
+  return { replaceData, xlsxPath };
+}
 
 function normStr(v: unknown): string {
   if (v === null || v === undefined) return "";
@@ -98,14 +121,6 @@ function decStr(v: unknown, fallback = "0"): string {
   return n.toFixed(2);
 }
 
-function resolveCmFactor(row: unknown[], M: HeaderMap): string {
-  const fFact = toNum(getCell(row, M["FACTOR"]));
-  const fCm = toNum(getCell(row, M["CM"]));
-  const pick =
-    fFact !== null && fFact > 0 ? fFact : fCm !== null && fCm > 0 ? fCm : 1;
-  return String(pick);
-}
-
 function readDataRow(sheet: XLSX.WorkSheet, R: number, maxC: number): unknown[] {
   const row: unknown[] = [];
   for (let C = 0; C <= maxC; C++) {
@@ -168,12 +183,33 @@ function iterSheetData(
 }
 
 async function main() {
-  const xlsxPath = process.argv[2] ?? DEFAULT_XLSX;
-  const wb = XLSX.readFile(xlsxPath, { cellDates: true, raw: false });
+  const { replaceData, xlsxPath } = parseCli(process.argv);
 
   const cat = await prisma.usefulLifeCategory.findUnique({ where: { code: "EQ_COMP" } });
   if (!cat) {
     throw new Error("Falta categoría EQ_COMP; ejecuta: pnpm --filter @meta-contabilidad/api prisma:seed");
+  }
+
+  if (!replaceData) {
+    const [assets, snaps] = await Promise.all([
+      prisma.asset.count(),
+      prisma.assetPeriodSnapshot.count(),
+    ]);
+    if (assets > 0 || snaps > 0) {
+      console.error(
+        [
+          "La base ya tiene activos o snapshots de un import anterior.",
+          "Este script solo puede cargar en vacío, o reemplazar todo de forma explícita.",
+          "",
+          "Para borrar activos, snapshots, períodos contables y audit log, y volver a importar:",
+          '  pnpm --filter @meta-contabilidad/api import:budacom -- --replace-data',
+          "  (opcional: ruta al .xlsx al final)",
+          "",
+          `Estado actual: ${assets} activo(s), ${snaps} snapshot(s).`,
+        ].join("\n"),
+      );
+      process.exit(1);
+    }
   }
 
   await prisma.usefulLifeCategory.update({
@@ -185,10 +221,39 @@ async function main() {
     },
   });
 
-  await prisma.auditLog.deleteMany();
-  await prisma.assetPeriodSnapshot.deleteMany();
-  await prisma.accountingPeriod.deleteMany();
-  await prisma.asset.deleteMany();
+  if (replaceData) {
+    await prisma.auditLog.deleteMany();
+    await prisma.assetPeriodSnapshot.deleteMany();
+    await prisma.accountingPeriod.deleteMany();
+    await prisma.asset.deleteMany();
+  }
+
+  const wb = XLSX.readFile(xlsxPath, { cellDates: true, raw: false });
+
+  const monthRe = /^(\d{4})_(\d{2})$/;
+  const monthSheets = wb.SheetNames.map((n) => n.trim()).filter((n) => monthRe.test(n)).sort();
+
+  if (!replaceData) {
+    for (const sheetName of monthSheets) {
+      const m = sheetName.match(monthRe);
+      if (!m) continue;
+      const year = Number(m[1]);
+      const month = Number(m[2]);
+      const exists = await prisma.accountingPeriod.findUnique({
+        where: { year_month: { year, month } },
+      });
+      if (exists) {
+        console.error(
+          [
+            `Ya existe el período contable ${year}-${String(month).padStart(2, "0")} (hoja ${sheetName}).`,
+            "No se puede importar sin pisar datos. Para reemplazar todo el maestro Budacom:",
+            '  pnpm --filter @meta-contabilidad/api import:budacom -- --replace-data [ruta.xlsx]',
+          ].join("\n"),
+        );
+        process.exit(1);
+      }
+    }
+  }
 
   const masterByKey = new Map<string, MasterRow>();
 
@@ -198,9 +263,6 @@ async function main() {
     const m = extractMaster(row, map);
     if (m) masterByKey.set(assetKey(m.fechaRaw, m.desc, m.invoice), m);
   });
-
-  const monthRe = /^(\d{4})_(\d{2})$/;
-  const monthSheets = wb.SheetNames.map((n) => n.trim()).filter((n) => monthRe.test(n)).sort();
 
   for (const sheetName of monthSheets) {
     const sh = wb.Sheets[sheetName];
@@ -278,10 +340,10 @@ async function main() {
         data: {
           assetId,
           periodId: period.id,
-          cmFactor: resolveCmFactor(row, M),
+          cmFactor: "1",
           updatedGrossValue: decStr(getCell(row, M["VALOR ACTUALIZADO"])),
           depHistorical: decStr(getCell(row, M["DEP HISTORICA"])),
-          depCmAdjustment: decStr(getCell(row, M["CM DEP"])),
+          depCmAdjustment: "0.00",
           depUpdated: decStr(getCell(row, M["DEP ACTUALIZADA"])),
           netToDepreciate: decStr(getCell(row, M["VALOR NETO A DEPRECIAR"])),
           monthsRemainingInYear: monthsRem,

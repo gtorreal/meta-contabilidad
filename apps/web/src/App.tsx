@@ -3,6 +3,7 @@ import { AssetsPage } from "./pages/AssetsPage";
 import { CategoriesPage } from "./pages/CategoriesPage";
 import { IndicesPage } from "./pages/IndicesPage";
 import { PeriodsPage } from "./pages/PeriodsPage";
+import { ReportsFixedAssetMovementPage } from "./pages/ReportsFixedAssetMovementPage";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-2 rounded-md text-sm font-medium ${isActive ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-200"}`;
@@ -26,6 +27,9 @@ export default function App() {
             <NavLink to="/categorias" className={linkClass}>
               Vida útil
             </NavLink>
+            <NavLink to="/reportes/movimiento-activos" className={linkClass}>
+              Reportes
+            </NavLink>
           </nav>
         </div>
       </header>
@@ -35,6 +39,7 @@ export default function App() {
           <Route path="/indices" element={<IndicesPage />} />
           <Route path="/periodos" element={<PeriodsPage />} />
           <Route path="/categorias" element={<CategoriesPage />} />
+          <Route path="/reportes/movimiento-activos" element={<ReportsFixedAssetMovementPage />} />
         </Routes>
       </main>
     </div>

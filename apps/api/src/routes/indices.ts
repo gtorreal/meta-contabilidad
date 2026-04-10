@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import type { EconomicIndexType } from "@prisma/client";
 import { economicIndexCreateSchema, economicIndexUpdateSchema } from "@meta-contabilidad/shared";
 import { prisma } from "../db.js";
-import { requireAdmin } from "../middleware/admin.js";
 import { decToString } from "../serialize.js";
+import { upsertIpcMonthlyFromBundledData } from "../services/ipc-import.js";
 import { syncSiiUsdAndUf } from "../services/sii-sync.js";
 
 export const indicesRoute = new Hono();
@@ -19,10 +19,13 @@ function parsePageParam(raw: string | undefined, fallback: number): number {
   return n;
 }
 
+/** Dólar/UF diarios multi-año pueden superar miles de filas; el listado admin necesita verlos todos. */
+const INDICES_MAX_PAGE_SIZE = 50_000;
+
 function parsePageSizeParam(raw: string | undefined): number {
   const n = Number.parseInt(raw ?? "", 10);
   if (!Number.isFinite(n) || n < 1) return 50;
-  return Math.min(n, 100);
+  return Math.min(n, INDICES_MAX_PAGE_SIZE);
 }
 
 indicesRoute.get("/", async (c) => {
@@ -68,7 +71,19 @@ indicesRoute.get("/", async (c) => {
   });
 });
 
-indicesRoute.post("/sync-sii", requireAdmin, async (c) => {
+/** Serie mensual versionada en repo (desde enero 2017); mismo criterio que seed / `pnpm import:ipc`. */
+indicesRoute.post("/sync-ipc-bundle", async (c) => {
+  try {
+    const result = await upsertIpcMonthlyFromBundledData();
+    return c.json(result);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Error al cargar IPC desde ipc-monthly.json";
+    return c.json({ error: msg }, 500);
+  }
+});
+
+/** Datos públicos del SII; sin admin para no bloquear entornos locales si la clave no coincide. */
+indicesRoute.post("/sync-sii", async (c) => {
   try {
     const result = await syncSiiUsdAndUf();
     return c.json(result);

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { adminHeaders, api } from "../api";
 import { formatClpInteger, parseDecimalStringToRoundedBigInt } from "../formatCurrency";
 
@@ -15,7 +15,6 @@ type Period = {
 type SnapshotRow = {
   id: string;
   asset: { description: string; category: { code: string; acceleratedLifeMonths: number } };
-  cmFactor: string;
   updatedGrossValue: string;
   depreciationForPeriod: string;
   accumulatedDepreciation: string;
@@ -23,18 +22,50 @@ type SnapshotRow = {
   monthsRemainingInYear: number;
 };
 
+type BackfillSnapshotsResult = {
+  startYear: number;
+  startMonth: number;
+  untilYear: number;
+  untilMonth: number;
+  processed: Array<{ year: number; month: number; processedAssets: number }>;
+  skippedClosed: Array<{ year: number; month: number }>;
+  failures: Array<{ year: number; month: number; error: string }>;
+};
+
+const PERIODS_PAGE_SIZE = 10;
+
 export function PeriodsPage() {
   const qc = useQueryClient();
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const nowUtc = new Date();
+  const [year, setYear] = useState(nowUtc.getUTCFullYear());
+  const [month, setMonth] = useState(nowUtc.getUTCMonth() + 1);
+  const [backfillUntilYear, setBackfillUntilYear] = useState(nowUtc.getUTCFullYear());
+  const [backfillUntilMonth, setBackfillUntilMonth] = useState(nowUtc.getUTCMonth() + 1);
+  const [backfillSummary, setBackfillSummary] = useState<BackfillSnapshotsResult | null>(null);
   const [reopenReason, setReopenReason] = useState("");
   const [reopenPeriodId, setReopenPeriodId] = useState("");
+  const [periodsPage, setPeriodsPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: periods = [] } = useQuery({
     queryKey: ["periods"],
     queryFn: () => api<Period[]>("/api/periods"),
   });
+
+  const periodsTotal = periods.length;
+  const totalPages = Math.max(1, Math.ceil(periodsTotal / PERIODS_PAGE_SIZE));
+
+  useEffect(() => {
+    setPeriodsPage((p) => {
+      const tp = Math.max(1, Math.ceil(periods.length / PERIODS_PAGE_SIZE));
+      return Math.min(p, tp);
+    });
+  }, [periods.length]);
+
+  const paginatedPeriods = useMemo(() => {
+    const start = (periodsPage - 1) * PERIODS_PAGE_SIZE;
+    return periods.slice(start, start + PERIODS_PAGE_SIZE);
+  }, [periods, periodsPage]);
 
   const { data: snapshots = [], isPending: snapshotsPending } = useQuery({
     queryKey: ["snapshots", selectedId],
@@ -53,13 +84,40 @@ export function PeriodsPage() {
 
   const entryAmountLabel = snapshotsPending ? "…" : formatClpInteger(String(depreciationEntryTotal));
 
+  const [runCloseFeedback, setRunCloseFeedback] = useState<string | null>(null);
+
   const runClose = useMutation({
-    mutationFn: () =>
-      api("/api/periods/run-close", {
+    mutationFn: ({ year: y, month: m }: { year: number; month: number }) =>
+      api<{ processed: number }>("/api/periods/run-close", {
         method: "POST",
-        body: JSON.stringify({ year, month }),
+        body: JSON.stringify({ year: y, month: m }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["periods"] }),
+    onMutate: () => setRunCloseFeedback(null),
+    onSuccess: (data, { year: y, month: m }) => {
+      qc.invalidateQueries({ queryKey: ["periods"] });
+      const label = `${y}-${String(m).padStart(2, "0")}`;
+      setRunCloseFeedback(
+        `Período ${label}: ${data.processed} activo(s) elegible(s) con snapshot (CM e IPC ya cargados, depreciación según reglas actuales).`,
+      );
+    },
+    onError: () => setRunCloseFeedback(null),
+  });
+
+  const backfillSnapshots = useMutation({
+    mutationFn: () =>
+      api<BackfillSnapshotsResult>("/api/periods/backfill-snapshots", {
+        method: "POST",
+        body: JSON.stringify({
+          untilYear: backfillUntilYear,
+          untilMonth: backfillUntilMonth,
+        }),
+      }),
+    onMutate: () => setBackfillSummary(null),
+    onSuccess: (r) => {
+      setBackfillSummary(r);
+      void qc.invalidateQueries({ queryKey: ["periods"] });
+    },
+    onError: () => setBackfillSummary(null),
   });
 
   const closePeriod = useMutation({
@@ -95,9 +153,10 @@ export function PeriodsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Períodos y cierre</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Orden recomendado: primero <span className="font-medium">Calcular snapshots</span> (año/mes del
-          período), luego <span className="font-medium">Cerrar período</span>. Eso genera el auxiliar (CM por IPC y
-          depreciación lineal); al cerrar el período queda inmutable. Reapertura solo con{" "}
+          La <span className="font-medium">depreciación del mes</span> depende del mes anterior en base: si calculaste un
+          mes tarde sin la cadena, usá <span className="font-medium">Generar cadena desde primera compra</span>. Para un
+          solo mes, el formulario o <span className="font-medium">«Generar auxiliar»</span> en la fila (IPC + activos en
+          Índices). <span className="font-medium">Cerrar período</span> lo deja inmutable. Reapertura solo con{" "}
           <code className="rounded bg-slate-100 px-1">X-Admin-Key</code> (ver{" "}
           <code className="rounded bg-slate-100 px-1">VITE_ADMIN_API_KEY</code>).
         </p>
@@ -129,7 +188,7 @@ export function PeriodsPage() {
           <button
             type="button"
             disabled={runClose.isPending}
-            onClick={() => runClose.mutate()}
+            onClick={() => runClose.mutate({ year, month })}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             Calcular snapshots
@@ -138,8 +197,78 @@ export function PeriodsPage() {
         {runClose.error && (
           <p className="mt-2 text-sm text-red-600">{(runClose.error as Error).message}</p>
         )}
-        {runClose.isSuccess && (
-          <p className="mt-2 text-sm text-green-700">Cierre calculado (activos elegibles procesados).</p>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800">Cadena completa (desde primera compra)</h2>
+        <p className="mt-1 text-xs text-slate-600">
+          Recorre en orden cada mes civil desde el mes de la <span className="font-medium">adquisición más antigua</span>{" "}
+          de un activo ACTIVE hasta el mes tope (inclusive). Omite períodos ya <span className="font-medium">CLOSED</span>
+          . Puede tardar varios minutos (muchos meses × activos). Requiere IPC desde el año de esa compra.
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="text-xs font-medium text-slate-600">
+            Hasta año
+            <input
+              type="number"
+              className="mt-1 block w-28 rounded border border-slate-300 px-2 py-1.5 text-sm"
+              value={backfillUntilYear}
+              onChange={(e) => setBackfillUntilYear(Number(e.target.value))}
+            />
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            Hasta mes
+            <input
+              type="number"
+              min={1}
+              max={12}
+              className="mt-1 block w-24 rounded border border-slate-300 px-2 py-1.5 text-sm"
+              value={backfillUntilMonth}
+              onChange={(e) => setBackfillUntilMonth(Number(e.target.value))}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={backfillSnapshots.isPending}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `¿Generar snapshots mes a mes desde la primera compra hasta ${backfillUntilYear}-${String(backfillUntilMonth).padStart(2, "0")}? Puede tardar bastante.`,
+                )
+              ) {
+                return;
+              }
+              backfillSnapshots.mutate();
+            }}
+            className="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {backfillSnapshots.isPending ? "Generando cadena…" : "Generar cadena desde primera compra"}
+          </button>
+        </div>
+        {backfillSnapshots.isError && (
+          <p className="mt-2 text-sm text-red-600">{(backfillSnapshots.error as Error).message}</p>
+        )}
+        {backfillSummary && (
+          <div className="mt-3 rounded border border-slate-100 bg-slate-50 p-3 text-xs text-slate-800">
+            <p className="font-medium text-slate-900">Resumen</p>
+            <p className="mt-1">
+              Origen: {backfillSummary.startYear}-{String(backfillSummary.startMonth).padStart(2, "0")} → tope:{" "}
+              {backfillSummary.untilYear}-{String(backfillSummary.untilMonth).padStart(2, "0")}. Meses calculados:{" "}
+              {backfillSummary.processed.length}. Omitidos (cerrados): {backfillSummary.skippedClosed.length}.
+            </p>
+            {backfillSummary.failures.length > 0 && (
+              <div className="mt-2">
+                <p className="font-medium text-red-800">Fallos</p>
+                <ul className="mt-1 list-inside list-disc text-red-900">
+                  {backfillSummary.failures.map((f) => (
+                    <li key={`${f.year}-${f.month}`}>
+                      {f.year}-{String(f.month).padStart(2, "0")}: {f.error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
       </section>
 
@@ -154,7 +283,7 @@ export function PeriodsPage() {
             </tr>
           </thead>
           <tbody>
-            {periods.map((p) => (
+            {paginatedPeriods.map((p) => (
               <tr key={p.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-mono">
                   {p.year}-{String(p.month).padStart(2, "0")}
@@ -173,13 +302,26 @@ export function PeriodsPage() {
                     <>
                       <button
                         type="button"
+                        disabled={runClose.isPending || p.eligibleAssetCount === 0}
+                        title={
+                          p.eligibleAssetCount === 0
+                            ? "No hay activos activos elegibles a la fecha de cierre de este mes."
+                            : "Genera snapshots para este año-mes con activos + IPC actuales (mismo criterio que el formulario)."
+                        }
+                        className="text-xs text-sky-800 underline disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => runClose.mutate({ year: p.year, month: p.month })}
+                      >
+                        Generar auxiliar
+                      </button>
+                      <button
+                        type="button"
                         disabled={
                           closePeriod.isPending ||
                           (p.eligibleAssetCount > 0 && p._count.snapshots === 0)
                         }
                         title={
                           p.eligibleAssetCount > 0 && p._count.snapshots === 0
-                            ? "Ejecute primero «Calcular snapshots» con el año y mes de esta fila."
+                            ? "Use primero «Generar auxiliar» o «Calcular snapshots» para esta fila."
                             : undefined
                         }
                         className="text-xs text-amber-700 underline disabled:cursor-not-allowed disabled:opacity-50"
@@ -187,34 +329,74 @@ export function PeriodsPage() {
                       >
                         Cerrar período
                       </button>
-                      <button
-                        type="button"
-                        disabled={deletePeriod.isPending}
-                        className="text-xs text-red-700 underline disabled:opacity-50"
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              `¿Eliminar el período ${p.year}-${String(p.month).padStart(2, "0")}? Se borrarán sus snapshots si los hubiera.`,
-                            )
-                          ) {
-                            return;
-                          }
-                          deletePeriod.mutate(p.id);
-                        }}
-                      >
-                        Eliminar
-                      </button>
                     </>
+                  )}
+                  {(p.status === "OPEN" || (p.status === "CLOSED" && p._count.snapshots === 0)) && (
+                    <button
+                      type="button"
+                      disabled={deletePeriod.isPending}
+                      className="text-xs text-red-700 underline disabled:opacity-50"
+                      onClick={() => {
+                        const label = `${p.year}-${String(p.month).padStart(2, "0")}`;
+                        const extra =
+                          p.status === "CLOSED"
+                            ? " Está cerrado sin snapshots (cierre vacío); al eliminarlo desaparece del listado."
+                            : " Se borrarán sus snapshots si los hubiera.";
+                        if (!window.confirm(`¿Eliminar el período ${label}?${extra}`)) return;
+                        deletePeriod.mutate(p.id);
+                      }}
+                    >
+                      Eliminar
+                    </button>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 text-xs text-slate-600">
+          <span>
+            {periodsTotal === 0
+              ? "Sin períodos"
+              : `Mostrando ${(periodsPage - 1) * PERIODS_PAGE_SIZE + 1}–${Math.min(periodsPage * PERIODS_PAGE_SIZE, periodsTotal)} de ${periodsTotal}`}
+          </span>
+          {periodsTotal > 0 && totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={periodsPage <= 1}
+                onClick={() => setPeriodsPage((p) => Math.max(1, p - 1))}
+                className="rounded border border-slate-300 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Anterior
+              </button>
+              <span className="tabular-nums">
+                Página {periodsPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={periodsPage >= totalPages}
+                onClick={() => setPeriodsPage((p) => Math.min(totalPages, p + 1))}
+                className="rounded border border-slate-300 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Siguiente
+              </button>
+            </div>
+          )}
+        </div>
         <p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">
-          Puede eliminar filas de períodos <span className="font-medium">abiertos</span> (p. ej. meses que no
-          usará). Un período cerrado hay que reabrirlo con Admin antes de poder eliminarlo.
+          Puede eliminar períodos <span className="font-medium">abiertos</span> o un período{" "}
+          <span className="font-medium">cerrado sin snapshots</span> (p. ej. cerrado por error sin auxiliar). Si
+          el período cerrado tiene snapshots, reábralo con Admin y elimínalo mientras esté abierto.
         </p>
+        {runClose.error && (
+          <p className="border-t border-slate-100 px-3 py-2 text-sm text-red-600">
+            {(runClose.error as Error).message}
+          </p>
+        )}
+        {runCloseFeedback && !runClose.error && (
+          <p className="border-t border-slate-100 px-3 py-2 text-sm text-green-700">{runCloseFeedback}</p>
+        )}
         {closePeriod.error && (
           <p className="border-t border-slate-100 px-3 py-2 text-sm text-red-600">
             {(closePeriod.error as Error).message}
@@ -312,7 +494,6 @@ export function PeriodsPage() {
             <thead className="bg-slate-100 font-semibold uppercase text-slate-600">
               <tr>
                 <th className="px-2 py-2">Activo</th>
-                <th className="px-2 py-2 text-right">CM</th>
                 <th className="px-2 py-2 text-right">Bruto act.</th>
                 <th className="px-2 py-2 text-right">Dep. mes</th>
                 <th className="px-2 py-2 text-right">Dep. acum.</th>
@@ -324,7 +505,7 @@ export function PeriodsPage() {
             <tbody>
               {snapshotsPending && (
                 <tr className="border-t border-slate-100">
-                  <td colSpan={8} className="px-2 py-6 text-center text-slate-500">
+                  <td colSpan={7} className="px-2 py-6 text-center text-slate-500">
                     Cargando auxiliar…
                   </td>
                 </tr>
@@ -333,7 +514,6 @@ export function PeriodsPage() {
                 snapshots.map((s) => (
                   <tr key={s.id} className="border-t border-slate-100">
                     <td className="max-w-xs truncate px-2 py-2">{s.asset.description}</td>
-                    <td className="px-2 py-2 text-right font-mono">{s.cmFactor}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.updatedGrossValue)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.depreciationForPeriod)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.accumulatedDepreciation)}</td>
