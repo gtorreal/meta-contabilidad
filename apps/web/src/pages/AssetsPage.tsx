@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { formatClpInteger, formatUsdInteger } from "../formatCurrency";
 
@@ -21,12 +21,63 @@ type Asset = {
   acquisitionAmountOriginal: string;
   historicalValueClp: string;
   usefulLifeMonths: number | null;
+  acceleratedDepreciation?: boolean;
   initialUsefulLifeMonths?: number;
   remainingUsefulLifeMonths?: number;
   status: string;
   odooAssetRef: string | null;
   odooMoveRef: string | null;
 };
+
+type AssetEditForm = {
+  acquisitionDate: string;
+  invoiceNumber: string;
+  description: string;
+  categoryId: string;
+  acquisitionCurrency: string;
+  acquisitionAmountOriginal: string;
+  odooAssetRef: string;
+  odooMoveRef: string;
+  usefulLifeMonths: string;
+  status: string;
+};
+
+function usefulLifeSelectOptions(cat: Category) {
+  const { normalLifeMonths: n, acceleratedLifeMonths: a } = cat;
+  if (n === a) {
+    return [{ value: String(n), label: `Normal (${n} meses)` }];
+  }
+  return [
+    { value: String(n), label: `Normal (${n} meses)` },
+    { value: String(a), label: `Acelerada (${a} meses)` },
+  ];
+}
+
+function defaultUsefulLifeMonthsValue(asset: Asset): string {
+  if (asset.usefulLifeMonths != null) return String(asset.usefulLifeMonths);
+  return String(
+    asset.acceleratedDepreciation === true
+      ? asset.category.acceleratedLifeMonths
+      : asset.category.normalLifeMonths,
+  );
+}
+
+function assetToEditForm(asset: Asset): AssetEditForm {
+  const d =
+    typeof asset.acquisitionDate === "string" ? asset.acquisitionDate.slice(0, 10) : "";
+  return {
+    acquisitionDate: d,
+    invoiceNumber: asset.invoiceNumber ?? "",
+    description: asset.description,
+    categoryId: asset.categoryId,
+    acquisitionCurrency: asset.acquisitionCurrency,
+    acquisitionAmountOriginal: asset.acquisitionAmountOriginal,
+    odooAssetRef: asset.odooAssetRef ?? "",
+    odooMoveRef: asset.odooMoveRef ?? "",
+    usefulLifeMonths: defaultUsefulLifeMonthsValue(asset),
+    status: asset.status,
+  };
+}
 
 export function AssetsPage() {
   const qc = useQueryClient();
@@ -49,6 +100,10 @@ export function AssetsPage() {
   const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 
   const [assetToDelete, setAssetToDelete] = useState<Asset | null>(null);
+  const [assetToEdit, setAssetToEdit] = useState<Asset | null>(null);
+  const [editForm, setEditForm] = useState<AssetEditForm | null>(null);
+  const [editStep, setEditStep] = useState<"form" | "confirm">("form");
+  const [editClientError, setEditClientError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     acquisitionDate: new Date().toISOString().slice(0, 10),
@@ -69,17 +124,10 @@ export function AssetsPage() {
     return categories.find((c) => c.id === cid) ?? null;
   }, [categories, form.categoryId, defaultCategoryId]);
 
-  const usefulLifeOptions = useMemo(() => {
-    if (!selectedCategory) return [];
-    const { normalLifeMonths: n, acceleratedLifeMonths: a } = selectedCategory;
-    if (n === a) {
-      return [{ value: String(n), label: `Normal (${n} meses)` }];
-    }
-    return [
-      { value: String(n), label: `Normal (${n} meses)` },
-      { value: String(a), label: `Acelerada (${a} meses)` },
-    ];
-  }, [selectedCategory]);
+  const usefulLifeOptions = useMemo(
+    () => (selectedCategory ? usefulLifeSelectOptions(selectedCategory) : []),
+    [selectedCategory],
+  );
 
   useEffect(() => {
     if (!categories.length) return;
@@ -132,6 +180,78 @@ export function AssetsPage() {
     },
   });
 
+  const editSelectedCategory = useMemo(() => {
+    if (!editForm?.categoryId) return null;
+    return categories.find((c) => c.id === editForm.categoryId) ?? null;
+  }, [categories, editForm?.categoryId]);
+
+  const editUsefulLifeOptions = useMemo(
+    () => (editSelectedCategory ? usefulLifeSelectOptions(editSelectedCategory) : []),
+    [editSelectedCategory],
+  );
+
+  useEffect(() => {
+    if (!assetToEdit || !editForm || !editSelectedCategory || !editUsefulLifeOptions.length) return;
+    const allowed = new Set(editUsefulLifeOptions.map((o) => o.value));
+    if (allowed.has(editForm.usefulLifeMonths)) return;
+    setEditForm((f) =>
+      f ? { ...f, usefulLifeMonths: String(editSelectedCategory.normalLifeMonths) } : f,
+    );
+  }, [assetToEdit, editForm, editSelectedCategory, editUsefulLifeOptions]);
+
+  const updateAsset = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      api<Asset>(`/api/assets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assets"] });
+      setAssetToEdit(null);
+      setEditForm(null);
+      setEditStep("form");
+    },
+  });
+
+  const closeEditModal = useCallback(() => {
+    setAssetToEdit(null);
+    setEditForm(null);
+    setEditStep("form");
+    setEditClientError(null);
+    updateAsset.reset();
+  }, [updateAsset]);
+
+  function validateEditForm(form: AssetEditForm): string | null {
+    if (!form.description.trim()) return "La descripción es obligatoria.";
+    const amt = form.acquisitionAmountOriginal.trim();
+    if (!/^\d+(\.\d{1,4})?$/.test(amt)) {
+      return "Monto original inválido (números y hasta 4 decimales).";
+    }
+    const v = parseInt(form.usefulLifeMonths, 10);
+    if (!Number.isFinite(v) || v <= 0) return "Elija una vida útil válida.";
+    return null;
+  }
+
+  function buildPatchBody(form: AssetEditForm): Record<string, unknown> | null {
+    const cat = categories.find((c) => c.id === form.categoryId);
+    if (!cat) return null;
+    const n = cat.normalLifeMonths;
+    const a = cat.acceleratedLifeMonths;
+    const v = parseInt(form.usefulLifeMonths, 10);
+    if (!Number.isFinite(v) || v <= 0) return null;
+    const acceleratedDepreciation = n !== a && v === a;
+    return {
+      acquisitionDate: form.acquisitionDate,
+      description: form.description.trim(),
+      categoryId: form.categoryId,
+      acquisitionCurrency: form.acquisitionCurrency,
+      acquisitionAmountOriginal: form.acquisitionAmountOriginal.trim(),
+      invoiceNumber: form.invoiceNumber.trim() === "" ? null : form.invoiceNumber.trim(),
+      odooAssetRef: form.odooAssetRef.trim() === "" ? null : form.odooAssetRef.trim(),
+      odooMoveRef: form.odooMoveRef.trim() === "" ? null : form.odooMoveRef.trim(),
+      usefulLifeMonths: v,
+      acceleratedDepreciation,
+      status: form.status,
+    };
+  }
+
   useEffect(() => {
     if (!assetToDelete) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -140,6 +260,15 @@ export function AssetsPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [assetToDelete]);
+
+  useEffect(() => {
+    if (!assetToEdit) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeEditModal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [assetToEdit, closeEditModal]);
 
   return (
     <div className="space-y-6">
@@ -304,13 +433,14 @@ export function AssetsPage() {
               <th className="px-3 py-2 text-right">Vida útil inicial (m)</th>
               <th className="px-3 py-2 text-right">Vida útil restante (m)</th>
               <th className="px-3 py-2">Estado</th>
+              <th className="px-3 py-2">Editar</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {assetsPending && (
               <tr className="border-t border-slate-100">
-                <td colSpan={10} className="px-3 py-6 text-center text-sm text-slate-500">
+                <td colSpan={11} className="px-3 py-6 text-center text-sm text-slate-500">
                   Cargando activos…
                 </td>
               </tr>
@@ -345,6 +475,21 @@ export function AssetsPage() {
                     : "—"}
                 </td>
                 <td className="px-3 py-2">{a.status}</td>
+                <td className="px-3 py-2">
+                  <button
+                    type="button"
+                    className="text-xs text-slate-700 underline decoration-slate-400 hover:text-slate-900"
+                    onClick={() => {
+                      updateAsset.reset();
+                      setEditClientError(null);
+                      setEditStep("form");
+                      setAssetToEdit(a);
+                      setEditForm(assetToEditForm(a));
+                    }}
+                  >
+                    Editar
+                  </button>
+                </td>
                 <td className="px-3 py-2 text-right">
                   <button
                     type="button"
@@ -368,6 +513,231 @@ export function AssetsPage() {
           </p>
         )}
       </section>
+
+      {assetToEdit && editForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="presentation"
+          onClick={() => closeEditModal()}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-asset-title"
+            className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="edit-asset-title" className="text-sm font-semibold text-slate-900">
+              {editStep === "form" ? "Editar activo" : "Confirmar cambios"}
+            </h2>
+            {editStep === "confirm" ? (
+              <>
+                <p className="mt-2 text-sm text-slate-600">
+                  ¿Guardar los cambios en «{editForm.description.trim() || assetToEdit.description}»? El activo se
+                  actualizará en el servidor.
+                </p>
+                {updateAsset.isError && (
+                  <p className="mt-2 text-sm text-red-600">{(updateAsset.error as Error).message}</p>
+                )}
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    disabled={updateAsset.isPending}
+                    onClick={() => {
+                      setEditStep("form");
+                      updateAsset.reset();
+                    }}
+                  >
+                    Volver
+                  </button>
+                  <button
+                    type="button"
+                    disabled={updateAsset.isPending}
+                    className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                    onClick={() => {
+                      const body = buildPatchBody(editForm);
+                      if (!body) {
+                        setEditStep("form");
+                        setEditClientError("No se pudo armar la solicitud. Revise categoría y vida útil.");
+                        return;
+                      }
+                      updateAsset.mutate({ id: assetToEdit.id, body });
+                    }}
+                  >
+                    {updateAsset.isPending ? "Guardando…" : "Confirmar y guardar"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <label className="text-xs font-medium text-slate-600">
+                    Fecha adquisición
+                    <input
+                      type="date"
+                      required
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.acquisitionDate}
+                      onChange={(e) => setEditForm((f) => (f ? { ...f, acquisitionDate: e.target.value } : f))}
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Categoría
+                    <select
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.categoryId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        const cat = categories.find((c) => c.id === id);
+                        setEditForm((f) => {
+                          if (!f) return f;
+                          if (!cat) return { ...f, categoryId: id };
+                          const opts = usefulLifeSelectOptions(cat);
+                          const nextLife = opts.some((o) => o.value === f.usefulLifeMonths)
+                            ? f.usefulLifeMonths
+                            : String(cat.normalLifeMonths);
+                          return { ...f, categoryId: id, usefulLifeMonths: nextLife };
+                        });
+                      }}
+                    >
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.code} — {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Vida útil (meses)
+                    <select
+                      required
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.usefulLifeMonths}
+                      onChange={(e) =>
+                        setEditForm((f) => (f ? { ...f, usefulLifeMonths: e.target.value } : f))
+                      }
+                      disabled={!editUsefulLifeOptions.length}
+                    >
+                      {editUsefulLifeOptions.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Estado
+                    <select
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.status}
+                      onChange={(e) => setEditForm((f) => (f ? { ...f, status: e.target.value } : f))}
+                    >
+                      <option value="ACTIVE">ACTIVE</option>
+                      <option value="DISPOSED">DISPOSED</option>
+                      <option value="TRANSFERRED">TRANSFERRED</option>
+                      <option value="UNDER_REVIEW">UNDER_REVIEW</option>
+                    </select>
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Moneda
+                    <select
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.acquisitionCurrency}
+                      onChange={(e) =>
+                        setEditForm((f) => (f ? { ...f, acquisitionCurrency: e.target.value } : f))
+                      }
+                    >
+                      <option value="CLP">CLP</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                      <option value="OTHER">OTHER</option>
+                    </select>
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Monto original
+                    <input
+                      required
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.acquisitionAmountOriginal}
+                      onChange={(e) =>
+                        setEditForm((f) => (f ? { ...f, acquisitionAmountOriginal: e.target.value } : f))
+                      }
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600 md:col-span-2">
+                    Descripción
+                    <input
+                      required
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.description}
+                      onChange={(e) => setEditForm((f) => (f ? { ...f, description: e.target.value } : f))}
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Nº factura
+                    <input
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.invoiceNumber}
+                      onChange={(e) => setEditForm((f) => (f ? { ...f, invoiceNumber: e.target.value } : f))}
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Odoo asset ref
+                    <input
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.odooAssetRef}
+                      onChange={(e) => setEditForm((f) => (f ? { ...f, odooAssetRef: e.target.value } : f))}
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Odoo move ref
+                    <input
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.odooMoveRef}
+                      onChange={(e) => setEditForm((f) => (f ? { ...f, odooMoveRef: e.target.value } : f))}
+                    />
+                  </label>
+                </div>
+                {(editClientError || updateAsset.isError) && (
+                  <p className="mt-2 text-sm text-red-600">
+                    {editClientError ?? (updateAsset.error as Error).message}
+                  </p>
+                )}
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    onClick={() => closeEditModal()}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+                    onClick={() => {
+                      setEditClientError(null);
+                      updateAsset.reset();
+                      const err = validateEditForm(editForm);
+                      if (err) {
+                        setEditClientError(err);
+                        return;
+                      }
+                      if (!buildPatchBody(editForm)) {
+                        setEditClientError("Categoría no válida.");
+                        return;
+                      }
+                      setEditStep("confirm");
+                    }}
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {assetToDelete && (
         <div
