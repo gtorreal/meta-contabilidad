@@ -17,7 +17,9 @@ export type BudacomSnapshotInputs = {
  * Auxiliar mensual sobre valor histórico CLP (sin corrección monetaria por IPC).
  * - Acumulado nunca supera el histórico.
  * - Con vida útil restante 0: dep. del período = 0 y acumulado = histórico (cierre del bien).
- * - Si el mes anterior trae acumulado inflado (p. ej. import con IPC), se topea al histórico y el delta no baja de 0.
+ * - Si el mes anterior trae acumulado inflado (p. ej. import Excel al 100 %), el tope lineal de este mes puede ser
+ *   **menor** que ese acumulado: la dep. del período queda en 0 (no hay depreciación negativa) y el acumulado pasa al
+ *   tope lineal. Con vida útil restante &gt; 0 puede verse «dep. mes = 0» hasta regenerar la cadena mes a mes.
  */
 export function computeBudacomSnapshotFields(input: BudacomSnapshotInputs): {
   cmFactor: string;

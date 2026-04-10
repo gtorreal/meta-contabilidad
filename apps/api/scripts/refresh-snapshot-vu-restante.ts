@@ -2,7 +2,14 @@
  * Recalcula y persiste `monthsRemainingInYear` en todos los snapshots según
  * mes civil de adquisición → mes del período (mismo mes = 0) y vida útil efectiva.
  *
- * Útil tras import Budacom con VIDA UTIL incorrecta o migraciones de regla.
+ * PELIGRO: no recalcula dep. mes / dep. acum. / neto. Tras un import Budacom donde la
+ * depreciación en planilla no sigue el mismo calendario que `computeVuRestanteMeses`,
+ * ejecutar este script deja la fila incoherente en BD (VU distinta de los montos).
+ * Prefiera regenerar la cadena con cierre mensual (`runCloseMonthForPeriod` / backfill)
+ * o corregir el import; use este script solo si entiende que alineará solo la columna VU.
+ *
+ * La API del auxiliar mensual expone la VU persistida en el snapshot junto con los montos
+ * del mismo registro (`auxiliarSnapshotMonthsRemainingInYear`); no reemplaza solo la VU al vuelo.
  *
  * Uso (con DATABASE_URL en .env):
  *   pnpm --filter @meta-contabilidad/api exec tsx scripts/refresh-snapshot-vu-restante.ts

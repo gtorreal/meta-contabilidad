@@ -7,6 +7,8 @@
  * Uso (desde la raíz del repo, con `.env`):
  *   pnpm exec dotenv -e .env -- pnpm --filter @meta-contabilidad/api run recalculate:snapshots
  *   pnpm exec dotenv -e .env -- pnpm --filter @meta-contabilidad/api run recalculate:snapshots -- 2025 12
+ *
+ * Antes de recalcular, conviene revisar vida útil en activos viejos: `pnpm --filter @meta-contabilidad/api run audit:assets-life`
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";

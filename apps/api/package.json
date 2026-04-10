@@ -19,11 +19,13 @@
     "backfill:useful-life-accelerated": "tsx scripts/backfill-useful-life-from-accelerated-flag.ts",
     "reconcile:budacom": "tsx scripts/reconcile-budacom-xlsx.ts",
     "sync:budacom-snapshots": "tsx scripts/sync-budacom-snapshots-from-xlsx.ts",
+    "audit:assets-life": "tsx scripts/audit-assets-useful-life.ts",
     "audit:periods": "tsx scripts/audit-period-snapshots.ts",
     "import:sii": "tsx scripts/import-sii-indices.ts",
     "import:ipc": "tsx scripts/import-ipc.ts",
     "refresh:snapshot-vu": "tsx scripts/refresh-snapshot-vu-restante.ts",
-    "recalculate:snapshots": "tsx scripts/recalculate-open-snapshots.ts"
+    "recalculate:snapshots": "tsx scripts/recalculate-open-snapshots.ts",
+    "fix:eqcomp-legacy-recalc": "tsx scripts/fix-eqcomp-legacy-and-recalculate.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

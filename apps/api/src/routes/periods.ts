@@ -16,6 +16,8 @@ import {
   backfillSnapshotsChronologically,
   hasRunCloseChainGapRisk,
 } from "../services/period-backfill.js";
+import { isLikelyZeroDepDueToInflatedPrevChain } from "../services/auxiliar-dep-anomaly.js";
+import { auxiliarSnapshotMonthsRemainingInYear } from "../services/auxiliar-snapshot-policy.js";
 import {
   computeVuRestanteMeses,
   declaredInitialUsefulLifeMonths,
@@ -184,11 +186,24 @@ periodsRoute.get("/:id/snapshots", async (c) => {
       const { asset, ...rest } = r;
       const assetForVu = asset as unknown as AssetWithCategory;
       const initialUsefulLifeMonths = declaredInitialUsefulLifeMonths(assetForVu);
-      const monthsRemainingInYear = computeVuRestanteMeses(assetForVu, period.year, period.month);
+      const monthsRemainingInYear = auxiliarSnapshotMonthsRemainingInYear(r.monthsRemainingInYear);
+      const linearModelMonthsRemaining = computeVuRestanteMeses(assetForVu, period.year, period.month);
+      const acqDate = new Date(asset.acquisitionDate);
+      const likelyZeroDepFromChainMismatch = isLikelyZeroDepDueToInflatedPrevChain({
+        acquisitionDate: acqDate,
+        periodYear: period.year,
+        periodMonth: period.month,
+        depreciationForPeriod: r.depreciationForPeriod.toString(),
+        monthsRemainingInYear,
+        initialUsefulLifeMonths,
+        historicalValueClp: asset.historicalValueClp.toString(),
+      });
       return {
         ...rest,
         initialUsefulLifeMonths,
         monthsRemainingInYear,
+        linearModelMonthsRemaining,
+        likelyZeroDepFromChainMismatch,
         cmFactor: decToString(r.cmFactor),
         updatedGrossValue: decToString(r.updatedGrossValue),
         depHistorical: decToString(r.depHistorical),

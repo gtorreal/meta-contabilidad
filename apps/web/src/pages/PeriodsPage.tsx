@@ -17,6 +17,10 @@ type AuxSortKey = "acquisitionDate" | "initialUsefulLife" | "historicalValue";
 type SnapshotRow = {
   id: string;
   initialUsefulLifeMonths: number;
+  /** VU restante según calendario + vida útil declarada (diagnóstico; puede diferir del snapshot importado). */
+  linearModelMonthsRemaining: number;
+  /** Dep. mes = 0 con VU > 0: posible acumulado del mes anterior inflado vs modelo lineal. */
+  likelyZeroDepFromChainMismatch: boolean;
   asset: {
     description: string;
     acquisitionDate: string;
@@ -127,6 +131,19 @@ export function PeriodsPage() {
     return sum;
   }, [snapshots]);
 
+  const auxiliarHasImportedDepMismatch = useMemo(() => {
+    if (snapshotsPending) return false;
+    return snapshots.some((s) => {
+      const net = parseDecimalStringToRoundedBigInt(s.netBookValue) ?? 0n;
+      return net === 0n && s.linearModelMonthsRemaining > 0;
+    });
+  }, [snapshots, snapshotsPending]);
+
+  const auxiliarHasZeroDepChainMismatch = useMemo(() => {
+    if (snapshotsPending) return false;
+    return snapshots.some((s) => s.likelyZeroDepFromChainMismatch);
+  }, [snapshots, snapshotsPending]);
+
   const entryAmountLabel = snapshotsPending ? "…" : formatClpInteger(String(depreciationEntryTotal));
 
   const auxiliarPeriodTitle = useMemo(() => {
@@ -134,6 +151,8 @@ export function PeriodsPage() {
     if (!p) return "Auxiliar del período";
     return `Auxiliar del período ${p.year}-${String(p.month).padStart(2, "0")}`;
   }, [periods, selectedId]);
+
+  const selectedPeriod = useMemo(() => periods.find((x) => x.id === selectedId) ?? null, [periods, selectedId]);
 
   const [runCloseFeedback, setRunCloseFeedback] = useState<string | null>(null);
 
@@ -154,6 +173,24 @@ export function PeriodsPage() {
     onError: () => setRunCloseFeedback(null),
   });
 
+  const recalcAuxiliarPeriod = useMutation({
+    mutationFn: async () => {
+      if (!selectedPeriod) throw new Error("No hay período seleccionado.");
+      return api<{ processed: number }>("/api/periods/run-close", {
+        method: "POST",
+        body: JSON.stringify({ year: selectedPeriod.year, month: selectedPeriod.month }),
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["snapshots", selectedId] });
+      void qc.invalidateQueries({ queryKey: ["periods"] });
+    },
+  });
+
+  useEffect(() => {
+    recalcAuxiliarPeriod.reset();
+  }, [selectedId]);
+
   const backfillSnapshots = useMutation({
     mutationFn: () =>
       api<BackfillSnapshotsResult>("/api/periods/backfill-snapshots", {
@@ -167,6 +204,7 @@ export function PeriodsPage() {
     onSuccess: (r) => {
       setBackfillSummary(r);
       void qc.invalidateQueries({ queryKey: ["periods"] });
+      void qc.invalidateQueries({ queryKey: ["snapshots", selectedId] });
     },
     onError: () => setBackfillSummary(null),
   });
@@ -538,10 +576,83 @@ export function PeriodsPage() {
               </tbody>
             </table>
             <p className="mt-3 max-w-2xl text-xs text-slate-600">
-              Total = suma de «Dep. mes». Revise en Activos que la vida útil coincida (p. ej. acelerada 24 meses ítem 23);
-              import sin «VIDA UTIL» en Apertura asume acelerada para EQ_COMP. Si los montos no cuadran, regenere la cadena
-              de snapshots hasta este período.
+              Total = suma de «Dep. mes». «VU restante» y los montos salen del mismo snapshot persistido (cierre o import).
+              Revise en Activos que la vida útil coincida (p. ej. acelerada 24 meses ítem 23); import sin «VIDA UTIL» en
+              Apertura asume acelerada para EQ_COMP. Si los montos no cuadran con el modelo lineal, regenere la cadena de
+              snapshots hasta este período.
             </p>
+            {!snapshotsPending && auxiliarHasImportedDepMismatch && selectedPeriod && (
+              <div className="mt-2 max-w-2xl rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                <p className="font-medium text-amber-950">Inconsistencia import vs modelo lineal</p>
+                <p className="mt-1">
+                  Hay filas con neto en cero pero el modelo lineal (vida útil declarada y meses desde la compra) aún indica
+                  meses de vida útil. La tabla sigue mostrando lo que quedó guardado en la base (p. ej. dep. acumulada del
+                  Excel); no se corrige sola al abrir esta pantalla.
+                </p>
+                {selectedPeriod.status === "CLOSED" ? (
+                  <p className="mt-2 font-medium">
+                    Este período está <span className="uppercase">cerrado</span>: no se puede recalcular hasta reabrirlo
+                    con Admin (X-Admin-Key). Mientras tanto los números del auxiliar no cambiarán.
+                  </p>
+                ) : (
+                  <>
+                    <p className="mt-2">
+                      Revise vida útil en Activos (p. ej. Mac 2022 en 72m, no acelerada 24m) y ejecute{" "}
+                      <code className="rounded bg-amber-100/80 px-1">pnpm --filter @meta-contabilidad/api run audit:assets-life</code>{" "}
+                      si lo necesita. Luego sobrescriba snapshots con el motor interno:
+                    </p>
+                    <ul className="mt-1 list-inside list-disc">
+                      <li>
+                        Lo más fiable: arriba, «Generar cadena desde primera compra» hasta el mes actual (períodos OPEN).
+                      </li>
+                      <li>
+                        O solo este mes (si la cadena previa ya es correcta):{" "}
+                        <button
+                          type="button"
+                          disabled={recalcAuxiliarPeriod.isPending}
+                          onClick={() => recalcAuxiliarPeriod.mutate()}
+                          className="rounded bg-amber-800 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          {recalcAuxiliarPeriod.isPending ? "Recalculando…" : "Recalcular este período"}
+                        </button>
+                      </li>
+                    </ul>
+                    {recalcAuxiliarPeriod.isError && (
+                      <p className="mt-2 text-red-800">
+                        {(recalcAuxiliarPeriod.error as Error).message}. Si habla de «cadena» o meses anteriores, use
+                        «Generar cadena desde primera compra».
+                      </p>
+                    )}
+                    {recalcAuxiliarPeriod.isSuccess && (
+                      <p className="mt-2 text-green-900">
+                        Listo: {recalcAuxiliarPeriod.data.processed} activo(s) procesado(s). La tabla debería actualizarse
+                        al instante.
+                      </p>
+                    )}
+                  </>
+                )}
+                <p className="mt-2 border-t border-amber-200/80 pt-2 text-[11px] text-amber-900/90">
+                  En importes nuevos: flag <code className="rounded bg-amber-100/80 px-1">--linear-snapshots</code> en
+                  import-budacom-xlsx.
+                </p>
+              </div>
+            )}
+            {!snapshotsPending && auxiliarHasZeroDepChainMismatch && (
+              <div className="mt-2 max-w-2xl rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
+                <p className="font-medium">Dep. mes en cero con vida útil aún pendiente</p>
+                <p className="mt-1">
+                  Suele ocurrir si el <strong>mes anterior</strong> en la base sigue con depreciación acumulada del Excel
+                  (muy alta) y solo se recalculó <strong>este</strong> período: el motor ajusta el acumulado al tope lineal
+                  de este mes pero <strong>no registra depreciación negativa</strong>, así que la cuota del mes queda en
+                  $0 aunque el neto y la VU restante ya reflejen el modelo lineal.
+                </p>
+                <p className="mt-1 font-medium">
+                  Solución: use «Generar cadena desde primera compra» hasta este mes (períodos OPEN) para recalcular en
+                  orden; así cada mes toma un acumulado previo ya coherente y las cuotas mensuales vuelven a ser
+                  positivas.
+                </p>
+              </div>
+            )}
             {!snapshotsPending && snapshots.length === 0 && (
               <p className="mt-2 text-xs text-slate-500">Sin depreciación en este período (auxiliar vacío).</p>
             )}
@@ -596,11 +707,10 @@ export function PeriodsPage() {
                       )
                     }
                   >
-                    Valor hist.
+                    Precio/Valor Histórico
                     {auxSort.key === "historicalValue" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
                   </button>
                 </th>
-                <th className="px-2 py-2 text-right">Bruto act.</th>
                 <th className="px-2 py-2 text-right">Dep. mes</th>
                 <th className="px-2 py-2 text-right">Dep. acum.</th>
                 <th className="px-2 py-2 text-right">Neto</th>
@@ -635,7 +745,7 @@ export function PeriodsPage() {
             <tbody>
               {snapshotsPending && (
                 <tr className="border-t border-slate-100">
-                  <td colSpan={9} className="px-2 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-2 py-6 text-center text-slate-500">
                     Cargando auxiliar…
                   </td>
                 </tr>
@@ -652,8 +762,16 @@ export function PeriodsPage() {
                     <td className="px-2 py-2 text-right tabular-nums">
                       {formatClpInteger(s.asset.historicalValueClp)}
                     </td>
-                    <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.updatedGrossValue)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.depreciationForPeriod)}</td>
+                    <td
+                      className="px-2 py-2 text-right tabular-nums"
+                      title={
+                        s.likelyZeroDepFromChainMismatch
+                          ? "Cuota en cero: el acumulado del mes anterior puede estar por encima del tope lineal de este mes. Genere la cadena completa de snapshots."
+                          : undefined
+                      }
+                    >
+                      {formatClpInteger(s.depreciationForPeriod)}
+                    </td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.accumulatedDepreciation)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.netBookValue)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{s.initialUsefulLifeMonths}</td>

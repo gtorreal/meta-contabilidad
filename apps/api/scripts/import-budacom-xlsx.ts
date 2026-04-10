@@ -5,9 +5,16 @@
  * períodos contables para los meses del Excel.
  *
  * Uso:
- *   pnpm exec tsx scripts/import-budacom-xlsx.ts [--replace-data] [ruta-al-xlsx]
+ *   pnpm exec tsx scripts/import-budacom-xlsx.ts [--replace-data] [--linear-snapshots] [ruta-al-xlsx]
  *
- *   --replace-data  Borra AuditLog, snapshots, todos los períodos contables y activos, luego importa.
+ *   --replace-data      Borra AuditLog, snapshots, todos los períodos contables y activos, luego importa.
+ *   --linear-snapshots  Persiste dep./neto/VU con el motor lineal CLP (igual que el cierre mensual),
+ *                       encadenando dep. acumulada mes a mes. Sin esto, los montos salen del Excel
+ *                       (pueden estar al 100 % aun con 72m teóricos).
+ *
+ * Si importó sin --linear-snapshots y quiere el modelo interno sobre datos ya cargados: corrija vida útil
+ * en Activos si hace falta, luego `pnpm --filter @meta-contabilidad/api run recalculate:snapshots`.
+ * Para revisar activos viejos (p. ej. acelerada 24 por import): `pnpm --filter @meta-contabilidad/api run audit:assets-life`.
  */
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -15,6 +22,11 @@ import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 import { Decimal } from "decimal.js";
 import { PrismaClient } from "@prisma/client";
+import {
+  linearSnapshotFieldsForBudacomImport,
+  monthsRemainingForBudacomImportRow,
+} from "../src/services/budacom-import-snapshot.js";
+import type { AssetWithCategory } from "../src/services/effective-useful-life.js";
 
 const require = createRequire(import.meta.url);
 const XLSX = require("xlsx") as typeof import("xlsx");
@@ -33,13 +45,16 @@ const DEFAULT_XLSX = path.join(
   "Activo fijo Financiero Budacom 2025.xlsx",
 );
 
-function parseCli(argv: string[]): { replaceData: boolean; xlsxPath: string } {
+function parseCli(argv: string[]): { replaceData: boolean; linearSnapshots: boolean; xlsxPath: string } {
   const args = argv.slice(2);
   let replaceData = false;
+  let linearSnapshots = false;
   const positional: string[] = [];
   for (const a of args) {
     if (a === "--replace-data" || a === "--replace") {
       replaceData = true;
+    } else if (a === "--linear-snapshots") {
+      linearSnapshots = true;
     } else if (a.startsWith("-")) {
       console.warn(`Opción desconocida (ignorada): ${a}`);
     } else {
@@ -47,7 +62,7 @@ function parseCli(argv: string[]): { replaceData: boolean; xlsxPath: string } {
     }
   }
   const xlsxPath = positional[0] ?? DEFAULT_XLSX;
-  return { replaceData, xlsxPath };
+  return { replaceData, linearSnapshots, xlsxPath };
 }
 
 function normStr(v: unknown): string {
@@ -205,7 +220,10 @@ function iterSheetData(
 }
 
 async function main() {
-  const { replaceData, xlsxPath } = parseCli(process.argv);
+  const { replaceData, linearSnapshots, xlsxPath } = parseCli(process.argv);
+  if (linearSnapshots) {
+    console.log("Modo --linear-snapshots: snapshots con motor lineal CLP (como cierre mensual).");
+  }
 
   const cat = await prisma.usefulLifeCategory.findUnique({ where: { code: "EQ_COMP" } });
   if (!cat) {
@@ -325,6 +343,16 @@ async function main() {
     assetIdByKey.set(key, asset.id);
   }
 
+  const assetIds = [...assetIdByKey.values()];
+  const assetsWithCategory = await prisma.asset.findMany({
+    where: { id: { in: assetIds } },
+    include: { category: true },
+  });
+  const assetById = new Map(assetsWithCategory.map((a) => [a.id, a]));
+
+  /** Acumulado del mes anterior por activo (solo `--linear-snapshots`). */
+  const lastAccumByAssetId = new Map<string, string>();
+
   for (const sheetName of monthSheets) {
     const m = sheetName.match(monthRe)!;
     const year = Number(m[1]);
@@ -358,26 +386,54 @@ async function main() {
         continue;
       }
 
-      const vidaUtil = toNum(getCell(row, M["VIDA UTIL"]));
-      /** Vida útil remanente (meses totales en planilla). El cierre recalcula con meses transcurridos mes civil adq. → período (mismo mes = 0). */
-      const monthsRem = vidaUtil !== null ? Math.max(0, Math.round(vidaUtil)) : 0;
+      const assetRow = assetById.get(assetId);
+      if (!assetRow) {
+        console.warn(`Sin activo en mapa interno: ${assetId}`);
+        continue;
+      }
+      const assetForSnap = assetRow as unknown as AssetWithCategory;
 
-      await prisma.assetPeriodSnapshot.create({
-        data: {
-          assetId,
-          periodId: period.id,
-          cmFactor: cmFactorFromRow(M, row),
-          updatedGrossValue: decStr(getCell(row, M["VALOR ACTUALIZADO"])),
-          depHistorical: decStr(getCell(row, M["DEP HISTORICA"])),
-          depCmAdjustment: depCmAdjustmentFromRow(M, row),
-          depUpdated: decStr(getCell(row, M["DEP ACTUALIZADA"])),
-          netToDepreciate: decStr(getCell(row, M["VALOR NETO A DEPRECIAR"])),
-          monthsRemainingInYear: monthsRem,
-          depreciationForPeriod: decStr(getCell(row, M["DEPRECIACION PERIODO"])),
-          accumulatedDepreciation: decStr(getCell(row, M["DEP ACUMULADA"])),
-          netBookValue: decStr(getCell(row, M["VALOR NETO"])),
-        },
-      });
+      const vidaUtil = toNum(getCell(row, M["VIDA UTIL"]));
+
+      if (linearSnapshots) {
+        const prevAccum = lastAccumByAssetId.get(assetId) ?? null;
+        const snapFields = linearSnapshotFieldsForBudacomImport(assetForSnap, year, month, prevAccum);
+        lastAccumByAssetId.set(assetId, snapFields.accumulatedDepreciation);
+        await prisma.assetPeriodSnapshot.create({
+          data: {
+            assetId,
+            periodId: period.id,
+            cmFactor: snapFields.cmFactor,
+            updatedGrossValue: snapFields.updatedGrossValue,
+            depHistorical: snapFields.depHistorical,
+            depCmAdjustment: snapFields.depCmAdjustment,
+            depUpdated: snapFields.depUpdated,
+            netToDepreciate: snapFields.netToDepreciate,
+            monthsRemainingInYear: snapFields.monthsRemainingInYear,
+            depreciationForPeriod: snapFields.depreciationForPeriod,
+            accumulatedDepreciation: snapFields.accumulatedDepreciation,
+            netBookValue: snapFields.netBookValue,
+          },
+        });
+      } else {
+        const monthsRem = monthsRemainingForBudacomImportRow(vidaUtil, assetForSnap, year, month);
+        await prisma.assetPeriodSnapshot.create({
+          data: {
+            assetId,
+            periodId: period.id,
+            cmFactor: cmFactorFromRow(M, row),
+            updatedGrossValue: decStr(getCell(row, M["VALOR ACTUALIZADO"])),
+            depHistorical: decStr(getCell(row, M["DEP HISTORICA"])),
+            depCmAdjustment: depCmAdjustmentFromRow(M, row),
+            depUpdated: decStr(getCell(row, M["DEP ACTUALIZADA"])),
+            netToDepreciate: decStr(getCell(row, M["VALOR NETO A DEPRECIAR"])),
+            monthsRemainingInYear: monthsRem,
+            depreciationForPeriod: decStr(getCell(row, M["DEPRECIACION PERIODO"])),
+            accumulatedDepreciation: decStr(getCell(row, M["DEP ACUMULADA"])),
+            netBookValue: decStr(getCell(row, M["VALOR NETO"])),
+          },
+        });
+      }
       snaps += 1;
     }
     console.log(`${sheetName}: ${snaps} snapshots`);

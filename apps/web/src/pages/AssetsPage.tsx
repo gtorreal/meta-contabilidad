@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { formatClpInteger, formatUsdInteger } from "../formatCurrency";
+import { formatClpInteger } from "../formatCurrency";
 
 type Category = {
   id: string;
@@ -538,8 +538,7 @@ export function AssetsPage() {
               <th className="px-3 py-2">Descripción</th>
               <th className="px-3 py-2">Cat.</th>
               <th className="px-3 py-2">Mon.</th>
-              <th className="px-3 py-2 text-right">Original</th>
-              <th className="px-3 py-2 text-right">Hist. CLP</th>
+              <th className="px-3 py-2 text-right">Precio/Valor Histórico</th>
               <th className="px-3 py-2 text-right">Vida útil inicial (m)</th>
               <th className="px-3 py-2 text-right">Vida útil restante (m)</th>
               <th className="px-3 py-2">Estado</th>
@@ -550,7 +549,7 @@ export function AssetsPage() {
           <tbody>
             {assetsPending && (
               <tr className="border-t border-slate-100">
-                <td colSpan={11} className="px-3 py-6 text-center text-sm text-slate-500">
+                <td colSpan={10} className="px-3 py-6 text-center text-sm text-slate-500">
                   Cargando activos…
                 </td>
               </tr>
@@ -566,13 +565,6 @@ export function AssetsPage() {
                 <td className="max-w-xs truncate px-3 py-2">{a.description}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-slate-600">{a.category?.code}</td>
                 <td className="px-3 py-2">{a.acquisitionCurrency}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
-                  {a.acquisitionCurrency === "USD"
-                    ? formatUsdInteger(a.acquisitionAmountOriginal)
-                    : a.acquisitionCurrency === "CLP"
-                      ? formatClpInteger(a.acquisitionAmountOriginal)
-                      : a.acquisitionAmountOriginal}
-                </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
                   {formatClpInteger(a.historicalValueClp)}
                 </td>

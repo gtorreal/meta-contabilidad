@@ -3,6 +3,7 @@ import { assetCreateSchema, assetUpdateSchema } from "@meta-contabilidad/shared"
 import { prisma } from "../db.js";
 import { decToString, serializeAssetDecimals } from "../serialize.js";
 import { resolveHistoricalValueClp } from "../services/fx.js";
+import { auxiliarSnapshotMonthsRemainingInYear } from "../services/auxiliar-snapshot-policy.js";
 import { assertAssetEditable } from "../services/period-guard.js";
 import {
   computeVuRestanteMeses,
@@ -48,7 +49,7 @@ assetsRoute.get("/:id", async (c) => {
   const assetForVu = row as unknown as AssetWithCategory;
   const snapshots = snapRows.map((s) => ({
     ...s,
-    monthsRemainingInYear: computeVuRestanteMeses(assetForVu, s.period.year, s.period.month),
+    monthsRemainingInYear: auxiliarSnapshotMonthsRemainingInYear(s.monthsRemainingInYear),
     cmFactor: decToString(s.cmFactor),
     updatedGrossValue: decToString(s.updatedGrossValue),
     depHistorical: decToString(s.depHistorical),
