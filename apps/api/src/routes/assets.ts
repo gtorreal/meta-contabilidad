@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { assetCreateSchema, assetUpdateSchema } from "@meta-contabilidad/shared";
 import { prisma } from "../db.js";
-import { decToString } from "../serialize.js";
+import { decToString, serializeAssetDecimals } from "../serialize.js";
 import { resolveHistoricalValueClp } from "../services/fx.js";
 import { assertAssetEditable } from "../services/period-guard.js";
 import { usefulLifeErrorForCategory } from "../services/useful-life-for-category.js";
@@ -13,21 +13,12 @@ function parseYmd(s: string): Date {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
-function serializeAsset(a: Record<string, unknown>) {
-  return {
-    ...a,
-    acquisitionAmountOriginal: decToString(a.acquisitionAmountOriginal as never),
-    historicalValueClp: decToString(a.historicalValueClp as never),
-    creditAfPercent: decToString(a.creditAfPercent as never),
-  };
-}
-
 assetsRoute.get("/", async (c) => {
   const rows = await prisma.asset.findMany({
     include: { category: true },
     orderBy: { acquisitionDate: "desc" },
   });
-  return c.json(rows.map((r) => serializeAsset(r as unknown as Record<string, unknown>)));
+  return c.json(rows.map((r) => serializeAssetDecimals(r as unknown as Record<string, unknown>)));
 });
 
 assetsRoute.get("/:id", async (c) => {
@@ -37,7 +28,7 @@ assetsRoute.get("/:id", async (c) => {
   });
   if (!row) return c.json({ error: "No encontrado" }, 404);
   const { snapshots: snapRows, ...rest } = row;
-  const base = serializeAsset(rest as unknown as Record<string, unknown>);
+  const base = serializeAssetDecimals(rest as unknown as Record<string, unknown>);
   const snapshots = snapRows.map((s) => ({
     ...s,
     cmFactor: decToString(s.cmFactor),
@@ -100,7 +91,7 @@ assetsRoute.post("/", async (c) => {
       },
       include: { category: true },
     });
-    return c.json(serializeAsset(row as unknown as Record<string, unknown>), 201);
+    return c.json(serializeAssetDecimals(row as unknown as Record<string, unknown>), 201);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error al crear";
     return c.json({ error: msg }, 400);
@@ -190,7 +181,7 @@ assetsRoute.patch("/:id", async (c) => {
       },
       include: { category: true },
     });
-    return c.json(serializeAsset(row as unknown as Record<string, unknown>));
+    return c.json(serializeAssetDecimals(row as unknown as Record<string, unknown>));
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error al actualizar";
     return c.json({ error: msg }, 400);

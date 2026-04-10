@@ -5,7 +5,7 @@ import {
   runCloseMonthSchema,
 } from "@meta-contabilidad/shared";
 import { prisma } from "../db.js";
-import { decToString } from "../serialize.js";
+import { decToString, serializeAssetDecimals } from "../serialize.js";
 import { requireAdmin } from "../middleware/admin.js";
 import {
   countEligibleAssetsForPeriod,
@@ -172,17 +172,21 @@ periodsRoute.get("/:id/snapshots", async (c) => {
     orderBy: { asset: { description: "asc" } },
   });
   return c.json(
-    rows.map((r) => ({
-      ...r,
-      cmFactor: decToString(r.cmFactor),
-      updatedGrossValue: decToString(r.updatedGrossValue),
-      depHistorical: decToString(r.depHistorical),
-      depCmAdjustment: decToString(r.depCmAdjustment),
-      depUpdated: decToString(r.depUpdated),
-      netToDepreciate: decToString(r.netToDepreciate),
-      depreciationForPeriod: decToString(r.depreciationForPeriod),
-      accumulatedDepreciation: decToString(r.accumulatedDepreciation),
-      netBookValue: decToString(r.netBookValue),
-    })),
+    rows.map((r) => {
+      const { asset, ...rest } = r;
+      return {
+        ...rest,
+        cmFactor: decToString(r.cmFactor),
+        updatedGrossValue: decToString(r.updatedGrossValue),
+        depHistorical: decToString(r.depHistorical),
+        depCmAdjustment: decToString(r.depCmAdjustment),
+        depUpdated: decToString(r.depUpdated),
+        netToDepreciate: decToString(r.netToDepreciate),
+        depreciationForPeriod: decToString(r.depreciationForPeriod),
+        accumulatedDepreciation: decToString(r.accumulatedDepreciation),
+        netBookValue: decToString(r.netBookValue),
+        asset: serializeAssetDecimals(asset as unknown as Record<string, unknown>),
+      };
+    }),
   );
 });

@@ -12,15 +12,43 @@ type Period = {
   eligibleAssetCount: number;
 };
 
+type AuxSortKey = "acquisitionDate" | "acceleratedLife" | "historicalValue";
+
 type SnapshotRow = {
   id: string;
-  asset: { description: string; category: { code: string; acceleratedLifeMonths: number } };
+  asset: {
+    description: string;
+    acquisitionDate: string;
+    historicalValueClp: string | null;
+    category: { code: string; acceleratedLifeMonths: number };
+  };
   updatedGrossValue: string;
   depreciationForPeriod: string;
   accumulatedDepreciation: string;
   netBookValue: string;
   monthsRemainingInYear: number;
 };
+
+function cmpSnapshotsForSort(a: SnapshotRow, b: SnapshotRow, key: AuxSortKey): number {
+  const tieBreak = a.asset.description.localeCompare(b.asset.description, "es") || a.id.localeCompare(b.id);
+  if (key === "acquisitionDate") {
+    const da = typeof a.asset.acquisitionDate === "string" ? a.asset.acquisitionDate.slice(0, 10) : "";
+    const db = typeof b.asset.acquisitionDate === "string" ? b.asset.acquisitionDate.slice(0, 10) : "";
+    const c = da.localeCompare(db);
+    return c !== 0 ? c : tieBreak;
+  }
+  if (key === "acceleratedLife") {
+    const va = a.asset.category.acceleratedLifeMonths;
+    const vb = b.asset.category.acceleratedLifeMonths;
+    if (va !== vb) return va - vb;
+    return tieBreak;
+  }
+  const na = parseDecimalStringToRoundedBigInt(a.asset.historicalValueClp ?? "") ?? 0n;
+  const nb = parseDecimalStringToRoundedBigInt(b.asset.historicalValueClp ?? "") ?? 0n;
+  if (na < nb) return -1;
+  if (na > nb) return 1;
+  return tieBreak;
+}
 
 type BackfillSnapshotsResult = {
   startYear: number;
@@ -46,6 +74,7 @@ export function PeriodsPage() {
   const [reopenPeriodId, setReopenPeriodId] = useState("");
   const [periodsPage, setPeriodsPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [auxSort, setAuxSort] = useState<{ key: AuxSortKey; dir: "asc" | "desc" } | null>(null);
 
   const { data: periods = [] } = useQuery({
     queryKey: ["periods"],
@@ -72,6 +101,19 @@ export function PeriodsPage() {
     queryFn: () => api<SnapshotRow[]>(`/api/periods/${selectedId}/snapshots`),
     enabled: Boolean(selectedId),
   });
+
+  useEffect(() => {
+    setAuxSort(null);
+  }, [selectedId]);
+
+  const sortedSnapshots = useMemo(() => {
+    if (!auxSort) return snapshots;
+    const { key, dir } = auxSort;
+    return [...snapshots].sort((a, b) => {
+      const c = cmpSnapshotsForSort(a, b, key);
+      return dir === "asc" ? c : -c;
+    });
+  }, [snapshots, auxSort]);
 
   const depreciationEntryTotal = useMemo(() => {
     let sum = 0n;
@@ -499,26 +541,108 @@ export function PeriodsPage() {
             <thead className="bg-slate-100 font-semibold uppercase text-slate-600">
               <tr>
                 <th className="px-2 py-2">Activo</th>
+                <th
+                  className="px-2 py-2 text-left"
+                  aria-sort={
+                    auxSort?.key === "acquisitionDate"
+                      ? auxSort.dir === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-start gap-1 text-left font-semibold uppercase tracking-normal text-slate-600 hover:text-slate-900"
+                    onClick={() =>
+                      setAuxSort((prev) =>
+                        prev?.key === "acquisitionDate"
+                          ? { key: "acquisitionDate", dir: prev.dir === "asc" ? "desc" : "asc" }
+                          : { key: "acquisitionDate", dir: "asc" },
+                      )
+                    }
+                  >
+                    Fecha adq.
+                    {auxSort?.key === "acquisitionDate" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                </th>
+                <th
+                  className="px-2 py-2 text-right"
+                  aria-sort={
+                    auxSort?.key === "historicalValue"
+                      ? auxSort.dir === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="ml-auto flex items-center justify-end gap-1 font-semibold uppercase tracking-normal text-slate-600 hover:text-slate-900"
+                    onClick={() =>
+                      setAuxSort((prev) =>
+                        prev?.key === "historicalValue"
+                          ? { key: "historicalValue", dir: prev.dir === "asc" ? "desc" : "asc" }
+                          : { key: "historicalValue", dir: "asc" },
+                      )
+                    }
+                  >
+                    Valor hist.
+                    {auxSort?.key === "historicalValue" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                </th>
                 <th className="px-2 py-2 text-right">Bruto act.</th>
                 <th className="px-2 py-2 text-right">Dep. mes</th>
                 <th className="px-2 py-2 text-right">Dep. acum.</th>
                 <th className="px-2 py-2 text-right">Neto</th>
-                <th className="px-2 py-2 text-right">VU inic. acel.</th>
+                <th
+                  className="px-2 py-2 text-right"
+                  aria-sort={
+                    auxSort?.key === "acceleratedLife"
+                      ? auxSort.dir === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="ml-auto flex items-center justify-end gap-1 font-semibold uppercase tracking-normal text-slate-600 hover:text-slate-900"
+                    onClick={() =>
+                      setAuxSort((prev) =>
+                        prev?.key === "acceleratedLife"
+                          ? { key: "acceleratedLife", dir: prev.dir === "asc" ? "desc" : "asc" }
+                          : { key: "acceleratedLife", dir: "asc" },
+                      )
+                    }
+                  >
+                    VU inic. acel.
+                    {auxSort?.key === "acceleratedLife" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                </th>
                 <th className="px-2 py-2">Meses rest. año</th>
               </tr>
             </thead>
             <tbody>
               {snapshotsPending && (
                 <tr className="border-t border-slate-100">
-                  <td colSpan={7} className="px-2 py-6 text-center text-slate-500">
+                  <td colSpan={9} className="px-2 py-6 text-center text-slate-500">
                     Cargando auxiliar…
                   </td>
                 </tr>
               )}
               {!snapshotsPending &&
-                snapshots.map((s) => (
+                sortedSnapshots.map((s) => (
                   <tr key={s.id} className="border-t border-slate-100">
                     <td className="max-w-xs truncate px-2 py-2">{s.asset.description}</td>
+                    <td className="whitespace-nowrap px-2 py-2 tabular-nums">
+                      {typeof s.asset.acquisitionDate === "string"
+                        ? s.asset.acquisitionDate.slice(0, 10)
+                        : "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {formatClpInteger(s.asset.historicalValueClp)}
+                    </td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.updatedGrossValue)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.depreciationForPeriod)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.accumulatedDepreciation)}</td>
