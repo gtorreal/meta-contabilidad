@@ -74,7 +74,10 @@ export function PeriodsPage() {
   const [reopenPeriodId, setReopenPeriodId] = useState("");
   const [periodsPage, setPeriodsPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [auxSort, setAuxSort] = useState<{ key: AuxSortKey; dir: "asc" | "desc" } | null>(null);
+  const [auxSort, setAuxSort] = useState<{ key: AuxSortKey; dir: "asc" | "desc" }>({
+    key: "acquisitionDate",
+    dir: "desc",
+  });
 
   const { data: periods = [] } = useQuery({
     queryKey: ["periods"],
@@ -103,11 +106,10 @@ export function PeriodsPage() {
   });
 
   useEffect(() => {
-    setAuxSort(null);
+    setAuxSort({ key: "acquisitionDate", dir: "desc" });
   }, [selectedId]);
 
   const sortedSnapshots = useMemo(() => {
-    if (!auxSort) return snapshots;
     const { key, dir } = auxSort;
     return [...snapshots].sort((a, b) => {
       const c = cmpSnapshotsForSort(a, b, key);
@@ -125,6 +127,12 @@ export function PeriodsPage() {
   }, [snapshots]);
 
   const entryAmountLabel = snapshotsPending ? "…" : formatClpInteger(String(depreciationEntryTotal));
+
+  const auxiliarPeriodTitle = useMemo(() => {
+    const p = periods.find((x) => x.id === selectedId);
+    if (!p) return "Auxiliar del período";
+    return `Auxiliar del período ${p.year}-${String(p.month).padStart(2, "0")}`;
+  }, [periods, selectedId]);
 
   const [runCloseFeedback, setRunCloseFeedback] = useState<string | null>(null);
 
@@ -497,7 +505,7 @@ export function PeriodsPage() {
       {selectedId && (
         <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-            <h2 className="text-sm font-semibold text-slate-800">Auxiliar del período</h2>
+            <h2 className="text-sm font-semibold text-slate-800">{auxiliarPeriodTitle}</h2>
             <button type="button" className="text-xs text-slate-600 underline" onClick={() => setSelectedId(null)}>
               Cerrar
             </button>
@@ -544,7 +552,7 @@ export function PeriodsPage() {
                 <th
                   className="px-2 py-2 text-left"
                   aria-sort={
-                    auxSort?.key === "acquisitionDate"
+                    auxSort.key === "acquisitionDate"
                       ? auxSort.dir === "asc"
                         ? "ascending"
                         : "descending"
@@ -556,20 +564,20 @@ export function PeriodsPage() {
                     className="flex w-full items-center justify-start gap-1 text-left font-semibold uppercase tracking-normal text-slate-600 hover:text-slate-900"
                     onClick={() =>
                       setAuxSort((prev) =>
-                        prev?.key === "acquisitionDate"
+                        prev.key === "acquisitionDate"
                           ? { key: "acquisitionDate", dir: prev.dir === "asc" ? "desc" : "asc" }
                           : { key: "acquisitionDate", dir: "asc" },
                       )
                     }
                   >
                     Fecha adq.
-                    {auxSort?.key === "acquisitionDate" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                    {auxSort.key === "acquisitionDate" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
                   </button>
                 </th>
                 <th
                   className="px-2 py-2 text-right"
                   aria-sort={
-                    auxSort?.key === "historicalValue"
+                    auxSort.key === "historicalValue"
                       ? auxSort.dir === "asc"
                         ? "ascending"
                         : "descending"
@@ -581,14 +589,14 @@ export function PeriodsPage() {
                     className="ml-auto flex items-center justify-end gap-1 font-semibold uppercase tracking-normal text-slate-600 hover:text-slate-900"
                     onClick={() =>
                       setAuxSort((prev) =>
-                        prev?.key === "historicalValue"
+                        prev.key === "historicalValue"
                           ? { key: "historicalValue", dir: prev.dir === "asc" ? "desc" : "asc" }
                           : { key: "historicalValue", dir: "asc" },
                       )
                     }
                   >
                     Valor hist.
-                    {auxSort?.key === "historicalValue" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                    {auxSort.key === "historicalValue" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
                   </button>
                 </th>
                 <th className="px-2 py-2 text-right">Bruto act.</th>
@@ -598,7 +606,7 @@ export function PeriodsPage() {
                 <th
                   className="px-2 py-2 text-right"
                   aria-sort={
-                    auxSort?.key === "acceleratedLife"
+                    auxSort.key === "acceleratedLife"
                       ? auxSort.dir === "asc"
                         ? "ascending"
                         : "descending"
@@ -610,17 +618,17 @@ export function PeriodsPage() {
                     className="ml-auto flex items-center justify-end gap-1 font-semibold uppercase tracking-normal text-slate-600 hover:text-slate-900"
                     onClick={() =>
                       setAuxSort((prev) =>
-                        prev?.key === "acceleratedLife"
+                        prev.key === "acceleratedLife"
                           ? { key: "acceleratedLife", dir: prev.dir === "asc" ? "desc" : "asc" }
                           : { key: "acceleratedLife", dir: "asc" },
                       )
                     }
                   >
                     VU inic. acel.
-                    {auxSort?.key === "acceleratedLife" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                    {auxSort.key === "acceleratedLife" ? (auxSort.dir === "asc" ? " ↑" : " ↓") : ""}
                   </button>
                 </th>
-                <th className="px-2 py-2">Meses rest. año</th>
+                <th className="px-2 py-2 text-right">VU restante (m)</th>
               </tr>
             </thead>
             <tbody>
@@ -648,7 +656,7 @@ export function PeriodsPage() {
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.accumulatedDepreciation)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{formatClpInteger(s.netBookValue)}</td>
                     <td className="px-2 py-2 text-right">{s.asset.category.acceleratedLifeMonths}</td>
-                    <td className="px-2 py-2">{s.monthsRemainingInYear}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{s.monthsRemainingInYear}</td>
                   </tr>
                 ))}
             </tbody>

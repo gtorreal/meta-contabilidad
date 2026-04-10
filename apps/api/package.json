@@ -20,7 +20,8 @@
     "sync:budacom-snapshots": "tsx scripts/sync-budacom-snapshots-from-xlsx.ts",
     "audit:periods": "tsx scripts/audit-period-snapshots.ts",
     "import:sii": "tsx scripts/import-sii-indices.ts",
-    "import:ipc": "tsx scripts/import-ipc.ts"
+    "import:ipc": "tsx scripts/import-ipc.ts",
+    "refresh:snapshot-vu": "tsx scripts/refresh-snapshot-vu-restante.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

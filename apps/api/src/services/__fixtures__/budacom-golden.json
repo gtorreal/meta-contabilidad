@@ -1,5 +1,5 @@
 {
-  "description": "Expectativas sintéticas Budacom: IPC inventados (100→101→102) para factores redondos. Meses en servicio = inclusivo desde mes de adquisición hasta período (regla meta-contabilidad).",
+  "description": "Expectativas sintéticas Budacom: IPC inventados (100→101→102). Meses transcurridos = diff civil mes adq. → período (mismo mes = 0). monthsRemainingInYear = VU restante total.",
   "cases": [
     {
       "label": "asset-a-2024-07",
@@ -14,14 +14,14 @@
       "expected": {
         "cmFactor": "1.0100000000",
         "updatedGrossValue": "303000.00",
-        "depHistorical": "8333.33",
-        "depUpdated": "8416.67",
-        "depCmAdjustment": "83.34",
-        "depreciationForPeriod": "8416.67",
-        "accumulatedDepreciation": "8416.67",
-        "netBookValue": "294583.33",
-        "netToDepreciate": "294583.33",
-        "monthsRemainingInYear": 6
+        "depHistorical": "4166.67",
+        "depUpdated": "4208.33",
+        "depCmAdjustment": "41.66",
+        "depreciationForPeriod": "4208.33",
+        "accumulatedDepreciation": "4208.33",
+        "netBookValue": "298791.67",
+        "netToDepreciate": "298791.67",
+        "monthsRemainingInYear": 71
       }
     },
     {
@@ -33,18 +33,18 @@
       "periodMonth": 8,
       "ipcAcquisitionValue": "100",
       "ipcPeriodValue": "102",
-      "prevAccumulatedDepUpdated": "8416.67",
+      "prevAccumulatedDepUpdated": "4208.33",
       "expected": {
         "cmFactor": "1.0200000000",
         "updatedGrossValue": "306000.00",
-        "depHistorical": "12500.00",
-        "depUpdated": "12750.00",
-        "depCmAdjustment": "250.00",
-        "depreciationForPeriod": "4333.33",
-        "accumulatedDepreciation": "12750.00",
-        "netBookValue": "293250.00",
-        "netToDepreciate": "293250.00",
-        "monthsRemainingInYear": 5
+        "depHistorical": "8333.33",
+        "depUpdated": "8500.00",
+        "depCmAdjustment": "166.67",
+        "depreciationForPeriod": "4291.67",
+        "accumulatedDepreciation": "8500.00",
+        "netBookValue": "297500.00",
+        "netToDepreciate": "297500.00",
+        "monthsRemainingInYear": 70
       }
     },
     {
@@ -60,14 +60,14 @@
       "expected": {
         "cmFactor": "1.0000000000",
         "updatedGrossValue": "240000.00",
-        "depHistorical": "3333.33",
-        "depUpdated": "3333.33",
+        "depHistorical": "0.00",
+        "depUpdated": "0.00",
         "depCmAdjustment": "0.00",
-        "depreciationForPeriod": "3333.33",
-        "accumulatedDepreciation": "3333.33",
-        "netBookValue": "236666.67",
-        "netToDepreciate": "236666.67",
-        "monthsRemainingInYear": 6
+        "depreciationForPeriod": "0.00",
+        "accumulatedDepreciation": "0.00",
+        "netBookValue": "240000.00",
+        "netToDepreciate": "240000.00",
+        "monthsRemainingInYear": 72
       }
     },
     {
@@ -79,18 +79,18 @@
       "periodMonth": 8,
       "ipcAcquisitionValue": "101",
       "ipcPeriodValue": "102",
-      "prevAccumulatedDepUpdated": "3333.33",
+      "prevAccumulatedDepUpdated": "0.00",
       "expected": {
         "cmFactor": "1.0099009901",
         "updatedGrossValue": "242376.24",
-        "depHistorical": "6666.67",
-        "depUpdated": "6732.67",
-        "depCmAdjustment": "66.00",
-        "depreciationForPeriod": "3399.34",
-        "accumulatedDepreciation": "6732.67",
-        "netBookValue": "235643.57",
-        "netToDepreciate": "235643.57",
-        "monthsRemainingInYear": 5
+        "depHistorical": "3333.33",
+        "depUpdated": "3366.34",
+        "depCmAdjustment": "33.01",
+        "depreciationForPeriod": "3366.34",
+        "accumulatedDepreciation": "3366.34",
+        "netBookValue": "239009.90",
+        "netToDepreciate": "239009.90",
+        "monthsRemainingInYear": 71
       }
     }
   ]

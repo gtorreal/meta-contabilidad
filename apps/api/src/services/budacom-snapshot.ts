@@ -1,8 +1,5 @@
 import { Decimal } from "decimal.js";
-import {
-  monthsInclusiveFromAcquisition,
-  monthsRemainingInYearForSnapshot,
-} from "./asset-period-math.js";
+import { monthsElapsedSinceAcquisitionMonth, usefulLifeMonthsRemaining } from "./asset-period-math.js";
 
 /** Igual que `computeCmFactorFromIpc` pero con valores ya resueltos (tests / golden). */
 export function computeCmFactorFromIpcValues(
@@ -56,15 +53,11 @@ export function computeBudacomSnapshotFields(input: BudacomSnapshotInputs): {
   const updatedGross = historical.mul(fDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
   const acq = input.acquisitionDate;
-  const monthsHeldUncapped = monthsInclusiveFromAcquisition(acq, input.periodYear, input.periodMonth);
-  let monthsHeld = monthsHeldUncapped;
+  const monthsElapsedUncapped = monthsElapsedSinceAcquisitionMonth(acq, input.periodYear, input.periodMonth);
+  let monthsHeld = monthsElapsedUncapped;
   if (monthsHeld > input.lifeMonths) monthsHeld = input.lifeMonths;
 
-  const monthsRemainingInYear = monthsRemainingInYearForSnapshot(
-    input.periodMonth,
-    input.lifeMonths,
-    monthsHeldUncapped,
-  );
+  const monthsRemainingInYear = usefulLifeMonthsRemaining(input.lifeMonths, monthsElapsedUncapped);
 
   const depHistoricalRaw = historical.div(input.lifeMonths).mul(monthsHeld);
   const depHistorical = Decimal.min(depHistoricalRaw, historical).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);

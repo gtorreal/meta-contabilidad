@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { decToString, serializeAssetDecimals } from "../serialize.js";
 import { resolveHistoricalValueClp } from "../services/fx.js";
 import { assertAssetEditable } from "../services/period-guard.js";
+import { computeVuRestanteMeses, type AssetWithCategory } from "../services/effective-useful-life.js";
 import { usefulLifeErrorForCategory } from "../services/useful-life-for-category.js";
 
 export const assetsRoute = new Hono();
@@ -29,8 +30,10 @@ assetsRoute.get("/:id", async (c) => {
   if (!row) return c.json({ error: "No encontrado" }, 404);
   const { snapshots: snapRows, ...rest } = row;
   const base = serializeAssetDecimals(rest as unknown as Record<string, unknown>);
+  const assetForVu = row as unknown as AssetWithCategory;
   const snapshots = snapRows.map((s) => ({
     ...s,
+    monthsRemainingInYear: computeVuRestanteMeses(assetForVu, s.period.year, s.period.month),
     cmFactor: decToString(s.cmFactor),
     updatedGrossValue: decToString(s.updatedGrossValue),
     depHistorical: decToString(s.depHistorical),

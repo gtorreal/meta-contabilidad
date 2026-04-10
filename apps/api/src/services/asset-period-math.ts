@@ -25,32 +25,27 @@ export function* iterateCalendarMonthsInclusive(
   }
 }
 
-/** Meses civiles desde el mes de adquisición hasta el período (inclusive), mínimo 0. */
-export function monthsInclusiveFromAcquisition(
+/**
+ * Meses civiles transcurridos entre el mes de adquisición y el mes del período (excluye el +1 inclusivo):
+ * mismo mes y año → 0; un mes después → 1; nunca negativo.
+ * Misma base que la depreciación lineal y VU restante en el auxiliar.
+ */
+export function monthsElapsedSinceAcquisitionMonth(
   acquisition: Date,
   periodYear: number,
   periodMonth: number,
 ): number {
   const acqY = acquisition.getUTCFullYear();
   const acqM = acquisition.getUTCMonth() + 1;
-  const diff = (periodYear - acqY) * 12 + (periodMonth - acqM) + 1;
+  const diff = (periodYear - acqY) * 12 + (periodMonth - acqM);
   return Math.max(diff, 0);
 }
 
-function monthsRemainingInCalendarYear(periodMonth: number): number {
-  return 13 - periodMonth;
-}
-
 /**
- * Meses restantes en el año calendario del período, acotados por vida útil restante (misma regla que import Budacom / UI).
+ * Vida útil restante en meses (total). `monthsElapsedUncapped` debe ser el resultado de
+ * `monthsElapsedSinceAcquisitionMonth` (no el conteo inclusivo antiguo).
  */
-export function monthsRemainingInYearForSnapshot(
-  periodMonth: number,
-  lifeMonths: number,
-  monthsHeldUncapped: number,
-): number {
-  const calendarRemaining = monthsRemainingInCalendarYear(periodMonth);
-  const elapsed = Math.min(monthsHeldUncapped, lifeMonths);
-  const remainingLife = Math.max(0, lifeMonths - elapsed);
-  return Math.min(calendarRemaining, remainingLife);
+export function usefulLifeMonthsRemaining(lifeMonths: number, monthsElapsedUncapped: number): number {
+  const elapsed = Math.min(monthsElapsedUncapped, lifeMonths);
+  return Math.max(0, lifeMonths - elapsed);
 }

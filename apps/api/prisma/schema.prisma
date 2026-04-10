@@ -124,6 +124,7 @@ model AssetPeriodSnapshot {
   depCmAdjustment         Decimal            @db.Decimal(24, 2)
   depUpdated              Decimal            @db.Decimal(24, 2)
   netToDepreciate         Decimal            @db.Decimal(24, 2)
+  /// Vida útil remanente en meses (total), pese al nombre histórico del campo.
   monthsRemainingInYear   Int
   depreciationForPeriod   Decimal            @db.Decimal(24, 2)
   accumulatedDepreciation Decimal            @db.Decimal(24, 2)

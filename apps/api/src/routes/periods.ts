@@ -16,6 +16,7 @@ import {
   backfillSnapshotsChronologically,
   hasRunCloseChainGapRisk,
 } from "../services/period-backfill.js";
+import { computeVuRestanteMeses } from "../services/effective-useful-life.js";
 
 export const periodsRoute = new Hono();
 
@@ -166,6 +167,9 @@ periodsRoute.post("/:id/reopen", requireAdmin, async (c) => {
 
 periodsRoute.get("/:id/snapshots", async (c) => {
   const id = c.req.param("id");
+  const period = await prisma.accountingPeriod.findUnique({ where: { id } });
+  if (!period) return c.json({ error: "No encontrado" }, 404);
+
   const rows = await prisma.assetPeriodSnapshot.findMany({
     where: { periodId: id },
     include: { asset: { include: { category: true } } },
@@ -174,8 +178,10 @@ periodsRoute.get("/:id/snapshots", async (c) => {
   return c.json(
     rows.map((r) => {
       const { asset, ...rest } = r;
+      const monthsRemainingInYear = computeVuRestanteMeses(asset, period.year, period.month);
       return {
         ...rest,
+        monthsRemainingInYear,
         cmFactor: decToString(r.cmFactor),
         updatedGrossValue: decToString(r.updatedGrossValue),
         depHistorical: decToString(r.depHistorical),

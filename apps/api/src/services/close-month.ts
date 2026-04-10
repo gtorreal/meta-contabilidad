@@ -1,9 +1,12 @@
-import type { Asset, UsefulLifeCategory } from "@prisma/client";
 import { prisma } from "../db.js";
 import { computeBudacomSnapshotFields } from "./budacom-snapshot.js";
 import { computeMonotonicIpcFactorFromMap, fetchIpcMapForCloseRange } from "./cm.js";
+import {
+  effectiveUsefulLifeMonths,
+  type AssetWithCategory,
+} from "./effective-useful-life.js";
 
-export { monthsInclusiveFromAcquisition, monthsRemainingInYearForSnapshot } from "./asset-period-math.js";
+export { monthsElapsedSinceAcquisitionMonth, usefulLifeMonthsRemaining } from "./asset-period-math.js";
 
 export function endOfUtcMonth(year: number, month: number): Date {
   return new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
@@ -23,16 +26,6 @@ export function isActiveAssetEligibleForPeriodEnd(a: AssetEligibilityRow, period
 export function countEligibleFromAssetRows(assets: AssetEligibilityRow[], year: number, month: number): number {
   const periodEnd = endOfUtcMonth(year, month);
   return assets.filter((a) => isActiveAssetEligibleForPeriodEnd(a, periodEnd)).length;
-}
-
-type AssetWithCategory = Asset & { category: UsefulLifeCategory };
-
-/** Meses de vida útil aplicados al cálculo: override del activo o catálogo según régimen. */
-export function effectiveUsefulLifeMonths(asset: AssetWithCategory): number {
-  if (asset.usefulLifeMonths != null) return asset.usefulLifeMonths;
-  return asset.acceleratedDepreciation
-    ? asset.category.acceleratedLifeMonths
-    : asset.category.normalLifeMonths;
 }
 
 async function findPreviousSnapshot(assetId: string, year: number, month: number) {

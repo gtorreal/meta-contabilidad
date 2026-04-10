@@ -357,6 +357,7 @@ async function main() {
       }
 
       const vidaUtil = toNum(getCell(row, M["VIDA UTIL"]));
+      /** Vida útil remanente (meses totales en planilla). El cierre recalcula con meses transcurridos mes civil adq. → período (mismo mes = 0). */
       const monthsRem = vidaUtil !== null ? Math.max(0, Math.round(vidaUtil)) : 0;
 
       await prisma.assetPeriodSnapshot.create({
