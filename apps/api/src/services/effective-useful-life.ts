@@ -6,12 +6,16 @@ export type AssetWithCategory = Asset & { category: UsefulLifeCategory };
 
 /**
  * Vida útil total del cronograma (depreciación, VU inicial en UI, VU restante):
- * override válido (normal o acelerada del catálogo), o vida normal del rubro si no aplica.
+ * meses persistidos si son válidos para el rubro; si no hay override y el activo está marcado
+ * acelerado, la vida acelerada del catálogo; en caso contrario la vida normal del rubro.
  */
 export function declaredInitialUsefulLifeMonths(asset: AssetWithCategory): number {
   const u = asset.usefulLifeMonths;
   if (u != null && usefulLifeErrorForCategory(asset.category, u) === null) {
     return u;
+  }
+  if (u == null && asset.acceleratedDepreciation === true) {
+    return asset.category.acceleratedLifeMonths;
   }
   return asset.category.normalLifeMonths;
 }

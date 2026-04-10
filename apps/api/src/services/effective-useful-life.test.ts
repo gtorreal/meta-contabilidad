@@ -38,20 +38,25 @@ describe("declaredInitialUsefulLifeMonths", () => {
     expect(declaredInitialUsefulLifeMonths(a)).toBe(72);
   });
 
-  it("uses normal catalog when override null even if accelerated", () => {
+  it("uses accelerated catalog when override null and accelerated flag", () => {
     const a = mockAsset({ usefulLifeMonths: null, acceleratedDepreciation: true, category: {} });
+    expect(declaredInitialUsefulLifeMonths(a)).toBe(24);
+  });
+
+  it("uses normal catalog when override null and not accelerated", () => {
+    const a = mockAsset({ usefulLifeMonths: null, acceleratedDepreciation: false, category: {} });
     expect(declaredInitialUsefulLifeMonths(a)).toBe(72);
   });
 });
 
 describe("computeVuRestanteMeses", () => {
-  it("returns full declared life in acquisition month (accelerated flag ignored when usefulLifeMonths null)", () => {
+  it("returns full declared life in acquisition month when accelerated flag without override", () => {
     const a = mockAsset({ category: {} });
-    expect(computeVuRestanteMeses(a, 2025, 11)).toBe(72);
+    expect(computeVuRestanteMeses(a, 2025, 11)).toBe(24);
   });
 
   it("subtracts elapsed calendar months", () => {
     const a = mockAsset({ category: {} });
-    expect(computeVuRestanteMeses(a, 2025, 12)).toBe(71);
+    expect(computeVuRestanteMeses(a, 2025, 12)).toBe(23);
   });
 });

@@ -304,6 +304,7 @@ async function main() {
     const d = cellToDate(m.fechaRaw);
     if (!d) continue;
 
+    const acceleratedFromCatalog = m.usefulLifeMonths == null && cat.code === "EQ_COMP";
     const asset = await prisma.asset.create({
       data: {
         acquisitionDate: d,
@@ -314,9 +315,10 @@ async function main() {
         acquisitionAmountOriginal: m.original.toFixed(2),
         historicalValueClp: m.hist.toFixed(2),
         creditAfPercent: m.credit !== null ? String(m.credit) : undefined,
-        usefulLifeMonths: m.usefulLifeMonths ?? undefined,
-        /** Sin «VIDA UTIL» en Apertura: Budacom/SII ítem 23 suele usar vida acelerada del catálogo (24 m tras este import). Meses explícitos en Apertura se respetan. */
-        acceleratedDepreciation: m.usefulLifeMonths == null && cat.code === "EQ_COMP",
+        usefulLifeMonths:
+          m.usefulLifeMonths ?? (acceleratedFromCatalog ? cat.acceleratedLifeMonths : undefined),
+        /** Sin «VIDA UTIL» en Apertura: Budacom/SII ítem 23 suele usar vida acelerada del catálogo. Meses explícitos en Apertura se respetan. */
+        acceleratedDepreciation: acceleratedFromCatalog,
         status: "ACTIVE",
       },
     });
