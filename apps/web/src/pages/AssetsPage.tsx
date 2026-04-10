@@ -21,6 +21,8 @@ type Asset = {
   acquisitionAmountOriginal: string;
   historicalValueClp: string;
   usefulLifeMonths: number | null;
+  initialUsefulLifeMonths?: number;
+  remainingUsefulLifeMonths?: number;
   status: string;
   odooAssetRef: string | null;
   odooMoveRef: string | null;
@@ -299,7 +301,8 @@ export function AssetsPage() {
               <th className="px-3 py-2">Mon.</th>
               <th className="px-3 py-2 text-right">Original</th>
               <th className="px-3 py-2 text-right">Hist. CLP</th>
-              <th className="px-3 py-2 text-right">Vida útil (m)</th>
+              <th className="px-3 py-2 text-right">Vida útil inicial (m)</th>
+              <th className="px-3 py-2 text-right">Vida útil restante (m)</th>
               <th className="px-3 py-2">Estado</th>
               <th className="px-3 py-2" />
             </tr>
@@ -307,7 +310,7 @@ export function AssetsPage() {
           <tbody>
             {assetsPending && (
               <tr className="border-t border-slate-100">
-                <td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-500">
+                <td colSpan={10} className="px-3 py-6 text-center text-sm text-slate-500">
                   Cargando activos…
                 </td>
               </tr>
@@ -333,8 +336,13 @@ export function AssetsPage() {
                 <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
                   {formatClpInteger(a.historicalValueClp)}
                 </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right text-slate-600 tabular-nums">
+                  {a.initialUsefulLifeMonths ?? "—"}
+                </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right text-slate-600">
-                  {a.usefulLifeMonths ?? "—"}
+                  {a.status === "ACTIVE"
+                    ? (a.remainingUsefulLifeMonths ?? "—")
+                    : "—"}
                 </td>
                 <td className="px-3 py-2">{a.status}</td>
                 <td className="px-3 py-2 text-right">

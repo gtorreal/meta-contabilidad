@@ -4,7 +4,11 @@ import { prisma } from "../db.js";
 import { decToString, serializeAssetDecimals } from "../serialize.js";
 import { resolveHistoricalValueClp } from "../services/fx.js";
 import { assertAssetEditable } from "../services/period-guard.js";
-import { computeVuRestanteMeses, type AssetWithCategory } from "../services/effective-useful-life.js";
+import {
+  computeVuRestanteMeses,
+  effectiveUsefulLifeMonths,
+  type AssetWithCategory,
+} from "../services/effective-useful-life.js";
 import { usefulLifeErrorForCategory } from "../services/useful-life-for-category.js";
 
 export const assetsRoute = new Hono();
@@ -19,7 +23,18 @@ assetsRoute.get("/", async (c) => {
     include: { category: true },
     orderBy: { acquisitionDate: "desc" },
   });
-  return c.json(rows.map((r) => serializeAssetDecimals(r as unknown as Record<string, unknown>)));
+  const now = new Date();
+  const periodYear = now.getUTCFullYear();
+  const periodMonth = now.getUTCMonth() + 1;
+  return c.json(
+    rows.map((r) => {
+      const base = serializeAssetDecimals(r as unknown as Record<string, unknown>);
+      const asset = r as unknown as AssetWithCategory;
+      const initialUsefulLifeMonths = effectiveUsefulLifeMonths(asset);
+      const remainingUsefulLifeMonths = computeVuRestanteMeses(asset, periodYear, periodMonth);
+      return { ...base, initialUsefulLifeMonths, remainingUsefulLifeMonths };
+    }),
+  );
 });
 
 assetsRoute.get("/:id", async (c) => {
