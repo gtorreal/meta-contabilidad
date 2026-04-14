@@ -3,7 +3,6 @@ import type { Decimal } from "@prisma/client/runtime/library";
 import { leaseScheduleCreateSchema } from "@meta-contabilidad/shared";
 import { prisma } from "../db.js";
 import {
-  computePaymentDates,
   computeScheduleRows,
   computeScheduleSummary,
 } from "../services/lease-schedule-math.js";
@@ -106,27 +105,7 @@ leaseSchedulesRoute.get("/:id/rows", async (c) => {
     usefulLifeMonths: schedule.usefulLifeMonths,
   };
 
-  // Fetch UF values for all payment dates in one query
-  const paymentDates = computePaymentDates(
-    params.recognitionDate,
-    params.firstPaymentDay,
-    params.numberOfPeriods,
-  );
-
-  const dateObjs = paymentDates.map(parseYmd);
-  const ufRows = await prisma.economicIndex.findMany({
-    where: {
-      type: "UF",
-      date: { in: dateObjs },
-    },
-    select: { date: true, value: true },
-  });
-
-  const ufByDate = new Map<string, number>(
-    ufRows.map((r) => [formatIsoDate(r.date), Number(r.value)]),
-  );
-
-  const rows = computeScheduleRows(params, ufByDate);
+  const rows = computeScheduleRows(params);
   const summary = computeScheduleSummary(params);
 
   return c.json({

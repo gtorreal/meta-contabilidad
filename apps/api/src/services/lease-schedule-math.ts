@@ -16,8 +16,8 @@ export type LeaseScheduleRow = {
   interestUF: number;
   amortizationUF: number;
   closingBalanceUF: number;
-  installmentCLP: number | null; // null when UF for that date is unavailable
-  interestCLP: number | null;
+  installmentCLP: number;
+  interestCLP: number;
   monthlyDeprecCLP: number;
   accumDeprecCLP: number;
   netValueCLP: number;
@@ -44,8 +44,6 @@ export function computePaymentDates(
 
 export function computeScheduleRows(
   params: LeaseScheduleParams,
-  /** Map of YYYY-MM-DD → UF price (as number) for payment dates */
-  ufByDate: Map<string, number>,
 ): LeaseScheduleRow[] {
   const {
     recognitionDate,
@@ -86,9 +84,8 @@ export function computeScheduleRows(
     accumDeprec += monthlyDeprecCLP;
     const netValueCLP = Math.max(0, initialAssetCLP - accumDeprec);
 
-    const ufPrice = ufByDate.get(paymentDate) ?? null;
-    const installmentCLP = ufPrice !== null ? monthlyInstallmentUF * ufPrice : null;
-    const interestCLP = ufPrice !== null ? interestUF * ufPrice : null;
+    const installmentCLP = amortizationUF * ufAtRecognition;
+    const interestCLP = interestUF * ufAtRecognition;
 
     rows.push({
       period,
