@@ -3,7 +3,7 @@ import type { EconomicIndexType } from "@prisma/client";
 import { prisma } from "../db.js";
 
 /** Inicio de la ventana de ingesta SII (UF y dólar observado). */
-const SII_SYNC_MIN_YEAR = 2024;
+const SII_SYNC_MIN_YEAR = 2022;
 const MIN_DATE_UTC = new Date(Date.UTC(SII_SYNC_MIN_YEAR, 0, 1));
 
 const MONTH_BY_DIV_ID: Record<string, number> = {
