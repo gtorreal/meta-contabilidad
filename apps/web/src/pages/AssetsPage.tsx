@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { formatClpInteger } from "../formatCurrency";
 
@@ -179,6 +179,10 @@ export function AssetsPage() {
 
   const [form, setForm] = useState<AssetCreateForm>(() => emptyCreateForm());
 
+  const selectedCreateCategory = useMemo(
+    () => categories.find((c) => c.id === form.categoryId) ?? null,
+    [categories, form.categoryId],
+  );
 
   const create = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -387,7 +391,11 @@ export function AssetsPage() {
                   className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                   value={form.usefulLifeMonths}
                   onChange={(e) => setForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
-                  placeholder="Ej: 36"
+                  placeholder={
+                    selectedCreateCategory
+                      ? `Normal: ${selectedCreateCategory.normalLifeMonths} · Acelerada: ${selectedCreateCategory.acceleratedLifeMonths}`
+                      : "Ej: 36"
+                  }
                 />
               </label>
               <label className="text-xs font-medium text-slate-600">

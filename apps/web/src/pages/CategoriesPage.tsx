@@ -10,44 +10,37 @@ type Row = {
   acceleratedLifeMonths: number;
 };
 
-function EditableName({ row }: { row: Row }) {
+type PatchPayload = {
+  name?: string;
+  normalLifeMonths?: number;
+  acceleratedLifeMonths?: number;
+};
+
+function useUpdateCategory(id: string) {
   const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: PatchPayload) =>
+      api<Row>(`/api/categories/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
+  });
+}
+
+function EditableName({ row }: { row: Row }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(row.name);
   const inputRef = useRef<HTMLInputElement>(null);
+  const update = useUpdateCategory(row.id);
 
-  useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-
-  const update = useMutation({
-    mutationFn: (name: string) =>
-      api<Row>(`/api/categories/${row.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["categories"] });
-      setEditing(false);
-    },
-    onError: () => {
-      setValue(row.name);
-      setEditing(false);
-    },
-  });
+  useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
 
   function commit() {
     const trimmed = value.trim();
-    if (!trimmed) {
-      setValue(row.name);
-      setEditing(false);
-      return;
-    }
-    if (trimmed === row.name) {
-      setEditing(false);
-      return;
-    }
-    update.mutate(trimmed);
+    if (!trimmed) { setValue(row.name); setEditing(false); return; }
+    if (trimmed === row.name) { setEditing(false); return; }
+    update.mutate({ name: trimmed }, { onError: () => { setValue(row.name); setEditing(false); }, onSuccess: () => setEditing(false) });
   }
 
   if (editing) {
@@ -71,10 +64,69 @@ function EditableName({ row }: { row: Row }) {
     <button
       type="button"
       className="w-full text-left hover:underline decoration-slate-400 focus:outline-none focus:underline"
-      title="Haz clic para editar el nombre"
+      title="Haz clic para editar"
       onClick={() => { setValue(row.name); setEditing(true); }}
     >
       {row.name}
+    </button>
+  );
+}
+
+function EditableMonths({
+  row,
+  field,
+}: {
+  row: Row;
+  field: "normalLifeMonths" | "acceleratedLifeMonths";
+}) {
+  const current = row[field];
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(current));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const update = useUpdateCategory(row.id);
+
+  useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
+
+  function commit() {
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n) || n <= 0) { setValue(String(current)); setEditing(false); return; }
+    if (n === current) { setEditing(false); return; }
+    update.mutate(
+      { [field]: n },
+      {
+        onError: () => { setValue(String(current)); setEditing(false); },
+        onSuccess: () => setEditing(false),
+      },
+    );
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        min={1}
+        className="w-20 rounded border border-slate-400 px-2 py-0.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-slate-500"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { setValue(String(current)); setEditing(false); }
+        }}
+        disabled={update.isPending}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="hover:underline decoration-slate-400 focus:outline-none focus:underline tabular-nums"
+      title="Haz clic para editar"
+      onClick={() => { setValue(String(current)); setEditing(true); }}
+    >
+      {current}
     </button>
   );
 }
@@ -110,6 +162,7 @@ export function CategoriesPage() {
         <h1 className="text-2xl font-semibold text-slate-900">Vida útil (catálogo)</h1>
         <p className="mt-1 text-sm text-slate-600">
           Tabla normativa por tipo de bien; la depreciación del MVP usa meses normales o acelerados según el activo.
+          Haz clic en cualquier celda de nombre o meses para editarla.
         </p>
       </div>
 
@@ -194,8 +247,12 @@ export function CategoriesPage() {
                 <td className="px-3 py-2">
                   <EditableName row={r} />
                 </td>
-                <td className="px-3 py-2 text-right">{r.normalLifeMonths}</td>
-                <td className="px-3 py-2 text-right">{r.acceleratedLifeMonths}</td>
+                <td className="px-3 py-2 text-right">
+                  <EditableMonths row={r} field="normalLifeMonths" />
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <EditableMonths row={r} field="acceleratedLifeMonths" />
+                </td>
               </tr>
             ))}
           </tbody>
