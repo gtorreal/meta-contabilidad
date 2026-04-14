@@ -53,8 +53,12 @@ type CreateForm = {
   numberOfPeriods: string;
   monthlyInstallmentUF: string;
   annualInterestRate: string;
-  ufAtRecognition: string;
   usefulLifeMonths: string;
+};
+
+type IndicesResponse = {
+  items: { value: string }[];
+  total: number;
 };
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
@@ -82,7 +86,7 @@ function fmtDateShort(iso: string): string {
 
 // ── Create form validation ────────────────────────────────────────────────────
 
-function validateCreateForm(f: CreateForm): string | null {
+function validateCreateForm(f: CreateForm, ufAtRecognition: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(f.recognitionDate)) return "Fecha de reconocimiento inválida (YYYY-MM-DD).";
   const day = parseInt(f.firstPaymentDay, 10);
   if (!Number.isFinite(day) || day < 1 || day > 28) return "Día de pago debe ser entre 1 y 28.";
@@ -90,20 +94,21 @@ function validateCreateForm(f: CreateForm): string | null {
   if (!Number.isFinite(periods) || periods < 1 || periods > 120) return "Número de períodos debe ser 1–120.";
   if (!/^\d+(\.\d{1,4})?$/.test(f.monthlyInstallmentUF)) return "Cuota mensual (UF) inválida.";
   if (!/^\d+(\.\d+)?$/.test(f.annualInterestRate)) return "Tasa anual inválida (ej: 0.115).";
-  if (!/^\d+(\.\d{1,4})?$/.test(f.ufAtRecognition)) return "Valor UF inválido.";
+  if (!/^\d+(\.\d{1,4})?$/.test(ufAtRecognition))
+    return "No hay precio UF para esta fecha en los índices; ingréselo manualmente.";
   const life = parseInt(f.usefulLifeMonths, 10);
   if (!Number.isFinite(life) || life < 1 || life > 600) return "Vida útil debe ser 1–600 meses.";
   return null;
 }
 
-function buildCreateBody(f: CreateForm) {
+function buildCreateBody(f: CreateForm, ufAtRecognition: string) {
   return {
     recognitionDate: f.recognitionDate,
     firstPaymentDay: parseInt(f.firstPaymentDay, 10),
     numberOfPeriods: parseInt(f.numberOfPeriods, 10),
     monthlyInstallmentUF: f.monthlyInstallmentUF,
     annualInterestRate: f.annualInterestRate,
-    ufAtRecognition: f.ufAtRecognition,
+    ufAtRecognition,
     usefulLifeMonths: parseInt(f.usefulLifeMonths, 10),
   };
 }
@@ -115,7 +120,6 @@ function emptyForm(): CreateForm {
     numberOfPeriods: "36",
     monthlyInstallmentUF: "",
     annualInterestRate: "",
-    ufAtRecognition: "",
     usefulLifeMonths: "36",
   };
 }
@@ -380,8 +384,32 @@ export function ArriendoInmueblePage() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CreateForm>(emptyForm);
+  const [ufFallback, setUfFallback] = useState("");
   const [clientError, setClientError] = useState<string | null>(null);
   const [scheduleToDelete, setScheduleToDelete] = useState<string | null>(null);
+
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(form.recognitionDate);
+
+  const {
+    data: ufLookup,
+    isFetching: ufFetching,
+    isSuccess: ufSuccess,
+  } = useQuery<IndicesResponse>({
+    queryKey: ["uf-for-date", form.recognitionDate],
+    queryFn: () =>
+      api<IndicesResponse>(
+        `/api/indices?type=UF&from=${form.recognitionDate}&to=${form.recognitionDate}&pageSize=1`,
+      ),
+    enabled: validDate && showForm,
+    staleTime: Infinity,
+  });
+
+  const ufFromIndex = ufSuccess && ufLookup && ufLookup.items.length > 0
+    ? ufLookup.items[0]!.value
+    : null;
+
+  // Effective UF value: from index if found, else from fallback input
+  const resolvedUF = ufFromIndex ?? ufFallback;
 
   const { data: schedules = [], isPending, error } = useQuery<LeaseSchedule[]>({
     queryKey: ["lease-schedules"],
@@ -395,6 +423,7 @@ export function ArriendoInmueblePage() {
       qc.invalidateQueries({ queryKey: ["lease-schedules"] });
       setShowForm(false);
       setForm(emptyForm());
+      setUfFallback("");
       setClientError(null);
     },
   });
@@ -438,6 +467,7 @@ export function ArriendoInmueblePage() {
               create.reset();
               setClientError(null);
               setForm(emptyForm());
+              setUfFallback("");
               setShowForm(true);
             }}
           >
@@ -450,7 +480,7 @@ export function ArriendoInmueblePage() {
               <button
                 type="button"
                 className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                onClick={() => { setShowForm(false); setClientError(null); create.reset(); }}
+                onClick={() => { setShowForm(false); setClientError(null); setUfFallback(""); create.reset(); }}
               >
                 Cancelar
               </button>
@@ -462,9 +492,9 @@ export function ArriendoInmueblePage() {
                 e.preventDefault();
                 setClientError(null);
                 create.reset();
-                const err = validateCreateForm(form);
+                const err = validateCreateForm(form, resolvedUF);
                 if (err) { setClientError(err); return; }
-                create.mutate(buildCreateBody(form));
+                create.mutate(buildCreateBody(form, resolvedUF));
               }}
             >
               <label className={LABEL_CLASS}>
@@ -492,10 +522,37 @@ export function ArriendoInmueblePage() {
                 <input required className={FIELD_CLASS} value={form.annualInterestRate} onChange={set("annualInterestRate")} placeholder="0.115" />
               </label>
 
-              <label className={LABEL_CLASS}>
+              <div className={LABEL_CLASS}>
                 Valor UF al reconocimiento
-                <input required className={FIELD_CLASS} value={form.ufAtRecognition} onChange={set("ufAtRecognition")} placeholder="34817.58" />
-              </label>
+                {!validDate ? (
+                  <div className="mt-1 flex h-[34px] items-center rounded border border-slate-200 bg-slate-50 px-2 text-sm text-slate-400">
+                    Ingresa la fecha primero
+                  </div>
+                ) : ufFetching ? (
+                  <div className="mt-1 flex h-[34px] items-center rounded border border-slate-200 bg-slate-50 px-2 text-sm text-slate-500">
+                    Buscando UF…
+                  </div>
+                ) : ufFromIndex !== null ? (
+                  <div className="mt-1 flex h-[34px] items-center justify-between rounded border border-emerald-200 bg-emerald-50 px-2 text-sm">
+                    <span className="font-medium tabular-nums text-emerald-800">
+                      {fmtUF(parseFloat(ufFromIndex))} UF
+                    </span>
+                    <span className="text-xs text-emerald-600">índices</span>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <input
+                      className={`${FIELD_CLASS} border-amber-300`}
+                      value={ufFallback}
+                      onChange={(e) => setUfFallback(e.target.value)}
+                      placeholder="Sin dato — ingresar manualmente"
+                    />
+                    <p className="text-[11px] text-amber-700">
+                      No hay precio UF para esta fecha en los índices.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               <label className={LABEL_CLASS}>
                 Vida útil activo (meses)
@@ -521,7 +578,7 @@ export function ArriendoInmueblePage() {
             {/* Helper reference */}
             <div className="mt-4 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
               <span className="font-semibold">Contrato Buda 2022–2025 (referencia): </span>
-              Reconocimiento 2022-12-01 · Día pago 5 · 36 períodos · Cuota 95 UF · Tasa 0.115 · UF 34817.58 · VU 36 meses
+              Reconocimiento 2022-12-01 · Día pago 5 · 36 períodos · Cuota 95 UF · Tasa 0.115 · VU 36 meses · UF se lee de índices automáticamente
             </div>
           </>
         )}
