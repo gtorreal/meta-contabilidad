@@ -3,15 +3,10 @@ import { z } from "zod";
 export const economicIndexTypeSchema = z.enum(["USD_OBSERVED", "UF", "IPC"]);
 export type EconomicIndexType = z.infer<typeof economicIndexTypeSchema>;
 
-export const assetCurrencySchema = z.enum(["CLP", "USD", "EUR", "OTHER"]);
+export const assetCurrencySchema = z.enum(["CLP", "PEN", "USD", "COP", "ARS"]);
 export type AssetCurrency = z.infer<typeof assetCurrencySchema>;
 
-export const assetStatusSchema = z.enum([
-  "ACTIVE",
-  "DISPOSED",
-  "TRANSFERRED",
-  "UNDER_REVIEW",
-]);
+export const assetStatusSchema = z.enum(["ACTIVE", "DISPOSED", "SOLD"]);
 export type AssetStatus = z.infer<typeof assetStatusSchema>;
 
 export const periodStatusSchema = z.enum(["OPEN", "CLOSED"]);
@@ -45,6 +40,7 @@ export const assetCreateSchema = z.object({
   creditAfPercent: z.string().regex(/^\d+(\.\d+)?$/).optional().nullable(),
   acceleratedDepreciation: z.boolean().optional(),
   status: assetStatusSchema.optional(),
+  uniqueIdentifier: z.string().regex(/^[A-Za-z0-9]+$/).max(64).optional().nullable(),
   odooAssetRef: z.string().max(128).optional().nullable(),
   odooMoveRef: z.string().max(128).optional().nullable(),
 });

@@ -28,22 +28,19 @@ function mockAsset(overrides: Partial<Asset> & { category: Partial<UsefulLifeCat
 }
 
 describe("declaredInitialUsefulLifeMonths", () => {
-  it("uses override when it matches normal or accelerated of category", () => {
+  it("uses stored usefulLifeMonths directly when set, regardless of category catalog", () => {
     expect(declaredInitialUsefulLifeMonths(mockAsset({ usefulLifeMonths: 72, category: {} }))).toBe(72);
     expect(declaredInitialUsefulLifeMonths(mockAsset({ usefulLifeMonths: 24, category: {} }))).toBe(24);
+    expect(declaredInitialUsefulLifeMonths(mockAsset({ usefulLifeMonths: 48, category: {} }))).toBe(48);
+    expect(declaredInitialUsefulLifeMonths(mockAsset({ usefulLifeMonths: 6, category: {} }))).toBe(6);
   });
 
-  it("ignores invalid stored months (e.g. Excel remanente) and uses normal catalog", () => {
-    const a = mockAsset({ usefulLifeMonths: 6, category: {} });
-    expect(declaredInitialUsefulLifeMonths(a)).toBe(72);
-  });
-
-  it("uses accelerated catalog when override null and accelerated flag", () => {
+  it("uses accelerated catalog when usefulLifeMonths null and accelerated flag", () => {
     const a = mockAsset({ usefulLifeMonths: null, acceleratedDepreciation: true, category: {} });
     expect(declaredInitialUsefulLifeMonths(a)).toBe(24);
   });
 
-  it("uses normal catalog when override null and not accelerated", () => {
+  it("uses normal catalog when usefulLifeMonths null and not accelerated", () => {
     const a = mockAsset({ usefulLifeMonths: null, acceleratedDepreciation: false, category: {} });
     expect(declaredInitialUsefulLifeMonths(a)).toBe(72);
   });

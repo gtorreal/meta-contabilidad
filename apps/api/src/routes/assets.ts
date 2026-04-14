@@ -10,8 +10,6 @@ import {
   declaredInitialUsefulLifeMonths,
   type AssetWithCategory,
 } from "../services/effective-useful-life.js";
-import { usefulLifeErrorForCategory } from "../services/useful-life-for-category.js";
-
 export const assetsRoute = new Hono();
 
 function parseYmd(s: string): Date {
@@ -86,10 +84,6 @@ assetsRoute.post("/", async (c) => {
   if (!category) {
     return c.json({ error: "Categoría no encontrada" }, 400);
   }
-  const lifeErr = usefulLifeErrorForCategory(category, body.data.usefulLifeMonths);
-  if (lifeErr) {
-    return c.json({ error: lifeErr }, 400);
-  }
 
   try {
     const row = await prisma.asset.create({
@@ -105,6 +99,7 @@ assetsRoute.post("/", async (c) => {
         usefulLifeMonths: body.data.usefulLifeMonths ?? undefined,
         acceleratedDepreciation: body.data.acceleratedDepreciation ?? false,
         status: body.data.status ?? "ACTIVE",
+        uniqueIdentifier: body.data.uniqueIdentifier ?? undefined,
         odooAssetRef: body.data.odooAssetRef ?? undefined,
         odooMoveRef: body.data.odooMoveRef ?? undefined,
       },
@@ -160,20 +155,6 @@ assetsRoute.patch("/:id", async (c) => {
     }
   }
 
-  const effectiveCategoryId = data.categoryId ?? existing.categoryId;
-  if (data.usefulLifeMonths !== undefined) {
-    const categoryForLife = await prisma.usefulLifeCategory.findUnique({
-      where: { id: effectiveCategoryId },
-    });
-    if (!categoryForLife) {
-      return c.json({ error: "Categoría no encontrada" }, 400);
-    }
-    const patchLifeErr = usefulLifeErrorForCategory(categoryForLife, data.usefulLifeMonths);
-    if (patchLifeErr) {
-      return c.json({ error: patchLifeErr }, 400);
-    }
-  }
-
   try {
     const row = await prisma.asset.update({
       where: { id },
@@ -195,6 +176,7 @@ assetsRoute.patch("/:id", async (c) => {
           ? { acceleratedDepreciation: data.acceleratedDepreciation }
           : {}),
         ...(data.status ? { status: data.status } : {}),
+        ...(data.uniqueIdentifier !== undefined ? { uniqueIdentifier: data.uniqueIdentifier ?? undefined } : {}),
         ...(data.odooAssetRef !== undefined ? { odooAssetRef: data.odooAssetRef ?? undefined } : {}),
         ...(data.odooMoveRef !== undefined ? { odooMoveRef: data.odooMoveRef ?? undefined } : {}),
       },

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { formatClpInteger } from "../formatCurrency";
 
@@ -25,6 +25,7 @@ type Asset = {
   initialUsefulLifeMonths?: number;
   remainingUsefulLifeMonths?: number;
   status: string;
+  uniqueIdentifier: string | null;
   odooAssetRef: string | null;
   odooMoveRef: string | null;
 };
@@ -40,31 +41,18 @@ type AssetEditForm = {
   odooMoveRef: string;
   usefulLifeMonths: string;
   status: string;
+  uniqueIdentifier: string;
 };
-
-function usefulLifeSelectOptions(cat: Category) {
-  const { normalLifeMonths: n, acceleratedLifeMonths: a } = cat;
-  if (n === a) {
-    return [{ value: String(n), label: `Normal (${n} meses)` }];
-  }
-  return [
-    { value: String(n), label: `Normal (${n} meses)` },
-    { value: String(a), label: `Acelerada (${a} meses)` },
-  ];
-}
-
-function defaultUsefulLifeMonthsValue(asset: Asset): string {
-  if (asset.usefulLifeMonths != null) return String(asset.usefulLifeMonths);
-  return String(
-    asset.acceleratedDepreciation === true
-      ? asset.category.acceleratedLifeMonths
-      : asset.category.normalLifeMonths,
-  );
-}
 
 function assetToEditForm(asset: Asset): AssetEditForm {
   const d =
     typeof asset.acquisitionDate === "string" ? asset.acquisitionDate.slice(0, 10) : "";
+  const lifeMonths =
+    asset.usefulLifeMonths != null
+      ? String(asset.usefulLifeMonths)
+      : asset.acceleratedDepreciation === true
+        ? String(asset.category.acceleratedLifeMonths)
+        : String(asset.category.normalLifeMonths);
   return {
     acquisitionDate: d,
     invoiceNumber: asset.invoiceNumber ?? "",
@@ -74,8 +62,9 @@ function assetToEditForm(asset: Asset): AssetEditForm {
     acquisitionAmountOriginal: asset.acquisitionAmountOriginal,
     odooAssetRef: asset.odooAssetRef ?? "",
     odooMoveRef: asset.odooMoveRef ?? "",
-    usefulLifeMonths: defaultUsefulLifeMonthsValue(asset),
+    usefulLifeMonths: lifeMonths,
     status: asset.status,
+    uniqueIdentifier: asset.uniqueIdentifier ?? "",
   };
 }
 
@@ -89,6 +78,7 @@ type AssetCreateForm = {
   odooAssetRef: string;
   odooMoveRef: string;
   usefulLifeMonths: string;
+  uniqueIdentifier: string;
 };
 
 function emptyCreateForm(): AssetCreateForm {
@@ -102,41 +92,44 @@ function emptyCreateForm(): AssetCreateForm {
     odooAssetRef: "",
     odooMoveRef: "",
     usefulLifeMonths: "",
+    uniqueIdentifier: "",
   };
 }
+
+const VALID_CURRENCIES = ["CLP", "PEN", "USD", "COP", "ARS"] as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Activo",
+  DISPOSED: "Dado de baja",
+  SOLD: "Vendido",
+};
 
 function validateCreateForm(form: AssetCreateForm, categories: Category[]): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(form.acquisitionDate.trim())) {
     return "La fecha de adquisición es obligatoria y debe ser válida.";
   }
   if (!form.categoryId.trim()) return "Seleccione una categoría.";
-  const cat = categories.find((c) => c.id === form.categoryId);
-  if (!cat) return "Categoría no válida.";
-  const cur = form.acquisitionCurrency;
-  if (cur !== "CLP" && cur !== "USD") return "Seleccione una moneda válida.";
+  if (!categories.find((c) => c.id === form.categoryId)) return "Categoría no válida.";
+  if (!(VALID_CURRENCIES as readonly string[]).includes(form.acquisitionCurrency)) {
+    return "Seleccione una moneda válida.";
+  }
   const amt = form.acquisitionAmountOriginal.trim();
   if (!/^\d+(\.\d{1,4})?$/.test(amt)) {
     return "Monto original inválido (números y hasta 4 decimales).";
   }
   if (!form.description.trim()) return "La descripción es obligatoria.";
-  if (!form.invoiceNumber.trim()) return "El Nº de factura es obligatorio.";
   const v = parseInt(form.usefulLifeMonths, 10);
-  if (!Number.isFinite(v) || v <= 0) return "Elija una vida útil válida.";
-  const opts = usefulLifeSelectOptions(cat);
-  if (!opts.some((o) => o.value === String(v))) {
-    return "La vida útil debe ser la normal o la acelerada de la categoría elegida.";
+  if (!Number.isFinite(v) || v <= 0 || v > 600) return "Ingrese una vida útil válida (1–600 meses).";
+  if (form.uniqueIdentifier.trim() && !/^[A-Za-z0-9]+$/.test(form.uniqueIdentifier.trim())) {
+    return "El identificador único solo puede contener letras y números.";
   }
   return null;
 }
 
 function buildCreateBody(form: AssetCreateForm, categories: Category[]): Record<string, unknown> | null {
-  const cat = categories.find((c) => c.id === form.categoryId);
-  if (!cat) return null;
+  if (!categories.find((c) => c.id === form.categoryId)) return null;
   const v = parseInt(form.usefulLifeMonths, 10);
   if (!Number.isFinite(v) || v <= 0) return null;
-  const n = cat.normalLifeMonths;
-  const a = cat.acceleratedLifeMonths;
-  const acceleratedDepreciation = n !== a && v === a;
   const amt = form.acquisitionAmountOriginal.trim();
   if (!/^\d+(\.\d{1,4})?$/.test(amt)) return null;
   return {
@@ -145,11 +138,12 @@ function buildCreateBody(form: AssetCreateForm, categories: Category[]): Record<
     categoryId: form.categoryId,
     acquisitionCurrency: form.acquisitionCurrency,
     acquisitionAmountOriginal: amt,
-    invoiceNumber: form.invoiceNumber.trim(),
+    invoiceNumber: form.invoiceNumber.trim() === "" ? null : form.invoiceNumber.trim(),
     odooAssetRef: form.odooAssetRef.trim() === "" ? null : form.odooAssetRef.trim(),
     odooMoveRef: form.odooMoveRef.trim() === "" ? null : form.odooMoveRef.trim(),
     usefulLifeMonths: v,
-    acceleratedDepreciation,
+    acceleratedDepreciation: false,
+    uniqueIdentifier: form.uniqueIdentifier.trim() === "" ? null : form.uniqueIdentifier.trim(),
   };
 }
 
@@ -185,24 +179,6 @@ export function AssetsPage() {
 
   const [form, setForm] = useState<AssetCreateForm>(() => emptyCreateForm());
 
-  const selectedCreateCategory = useMemo(() => {
-    if (!form.categoryId) return null;
-    return categories.find((c) => c.id === form.categoryId) ?? null;
-  }, [categories, form.categoryId]);
-
-  const usefulLifeOptions = useMemo(
-    () => (selectedCreateCategory ? usefulLifeSelectOptions(selectedCreateCategory) : []),
-    [selectedCreateCategory],
-  );
-
-  useEffect(() => {
-    if (!selectedCreateCategory || !usefulLifeOptions.length) return;
-    const allowed = new Set(usefulLifeOptions.map((o) => o.value));
-    setForm((f) => {
-      if (allowed.has(f.usefulLifeMonths)) return f;
-      return { ...f, usefulLifeMonths: String(selectedCreateCategory.normalLifeMonths) };
-    });
-  }, [selectedCreateCategory, usefulLifeOptions]);
 
   const create = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -224,24 +200,6 @@ export function AssetsPage() {
     },
   });
 
-  const editSelectedCategory = useMemo(() => {
-    if (!editForm?.categoryId) return null;
-    return categories.find((c) => c.id === editForm.categoryId) ?? null;
-  }, [categories, editForm?.categoryId]);
-
-  const editUsefulLifeOptions = useMemo(
-    () => (editSelectedCategory ? usefulLifeSelectOptions(editSelectedCategory) : []),
-    [editSelectedCategory],
-  );
-
-  useEffect(() => {
-    if (!assetToEdit || !editForm || !editSelectedCategory || !editUsefulLifeOptions.length) return;
-    const allowed = new Set(editUsefulLifeOptions.map((o) => o.value));
-    if (allowed.has(editForm.usefulLifeMonths)) return;
-    setEditForm((f) =>
-      f ? { ...f, usefulLifeMonths: String(editSelectedCategory.normalLifeMonths) } : f,
-    );
-  }, [assetToEdit, editForm, editSelectedCategory, editUsefulLifeOptions]);
 
   const updateAsset = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
@@ -270,18 +228,17 @@ export function AssetsPage() {
       return "Monto original inválido (números y hasta 4 decimales).";
     }
     const v = parseInt(form.usefulLifeMonths, 10);
-    if (!Number.isFinite(v) || v <= 0) return "Elija una vida útil válida.";
+    if (!Number.isFinite(v) || v <= 0 || v > 600) return "Ingrese una vida útil válida (1–600 meses).";
+    if (form.uniqueIdentifier.trim() && !/^[A-Za-z0-9]+$/.test(form.uniqueIdentifier.trim())) {
+      return "El identificador único solo puede contener letras y números.";
+    }
     return null;
   }
 
   function buildPatchBody(form: AssetEditForm): Record<string, unknown> | null {
-    const cat = categories.find((c) => c.id === form.categoryId);
-    if (!cat) return null;
-    const n = cat.normalLifeMonths;
-    const a = cat.acceleratedLifeMonths;
+    if (!categories.find((c) => c.id === form.categoryId)) return null;
     const v = parseInt(form.usefulLifeMonths, 10);
     if (!Number.isFinite(v) || v <= 0) return null;
-    const acceleratedDepreciation = n !== a && v === a;
     return {
       acquisitionDate: form.acquisitionDate,
       description: form.description.trim(),
@@ -292,8 +249,9 @@ export function AssetsPage() {
       odooAssetRef: form.odooAssetRef.trim() === "" ? null : form.odooAssetRef.trim(),
       odooMoveRef: form.odooMoveRef.trim() === "" ? null : form.odooMoveRef.trim(),
       usefulLifeMonths: v,
-      acceleratedDepreciation,
+      acceleratedDepreciation: false,
       status: form.status,
+      uniqueIdentifier: form.uniqueIdentifier.trim() === "" ? null : form.uniqueIdentifier.trim(),
     };
   }
 
@@ -407,45 +365,30 @@ export function AssetsPage() {
                   required
                   className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                   value={form.categoryId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    const cat = categories.find((c) => c.id === id);
-                    setForm((f) => ({
-                      ...f,
-                      categoryId: id,
-                      usefulLifeMonths: cat ? String(cat.normalLifeMonths) : "",
-                    }));
-                  }}
+                  onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
                 >
                   <option value="" disabled>
                     Seleccione categoría
                   </option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.code} — {c.name}
+                      {c.name}
                     </option>
                   ))}
                 </select>
               </label>
               <label className="text-xs font-medium text-slate-600">
-                Vida útil (meses)
-                <select
-                  required={Boolean(form.categoryId && usefulLifeOptions.length)}
+                Vida útil inicial (meses)
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  max={600}
                   className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                   value={form.usefulLifeMonths}
                   onChange={(e) => setForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
-                  disabled={!form.categoryId || !usefulLifeOptions.length}
-                >
-                  {!form.categoryId ? (
-                    <option value="">Elija categoría primero</option>
-                  ) : (
-                    usefulLifeOptions.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))
-                  )}
-                </select>
+                  placeholder="Ej: 36"
+                />
               </label>
               <label className="text-xs font-medium text-slate-600">
                 Moneda
@@ -456,7 +399,10 @@ export function AssetsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, acquisitionCurrency: e.target.value }))}
                 >
                   <option value="CLP">CLP</option>
+                  <option value="PEN">PEN</option>
                   <option value="USD">USD</option>
+                  <option value="COP">COP</option>
+                  <option value="ARS">ARS</option>
                 </select>
               </label>
               <label className="text-xs font-medium text-slate-600">
@@ -479,9 +425,17 @@ export function AssetsPage() {
                 />
               </label>
               <label className="text-xs font-medium text-slate-600">
+                Identificador único
+                <input
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={form.uniqueIdentifier}
+                  onChange={(e) => setForm((f) => ({ ...f, uniqueIdentifier: e.target.value }))}
+                  placeholder="Alfanumérico, ej: ACT001"
+                />
+              </label>
+              <label className="text-xs font-medium text-slate-600">
                 Nº factura
                 <input
-                  required
                   className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                   value={form.invoiceNumber}
                   onChange={(e) => setForm((f) => ({ ...f, invoiceNumber: e.target.value }))}
@@ -535,10 +489,11 @@ export function AssetsPage() {
           <thead className="bg-slate-100 text-xs font-semibold uppercase text-slate-600">
             <tr>
               <th className="px-3 py-2">Fecha</th>
+              <th className="px-3 py-2">Identificador</th>
               <th className="px-3 py-2">Descripción</th>
-              <th className="px-3 py-2">Cat.</th>
+              <th className="px-3 py-2">Categoría</th>
               <th className="px-3 py-2">Mon.</th>
-              <th className="px-3 py-2 text-right">Precio/Valor Histórico</th>
+              <th className="px-3 py-2 text-right">Valor histórico CLP</th>
               <th className="px-3 py-2 text-right">Vida útil inicial (m)</th>
               <th className="px-3 py-2 text-right">Vida útil restante (m)</th>
               <th className="px-3 py-2">Estado</th>
@@ -562,8 +517,11 @@ export function AssetsPage() {
                     ? a.acquisitionDate.slice(0, 10)
                     : ""}
                 </td>
+                <td className="whitespace-nowrap px-3 py-2 text-slate-600 font-mono text-xs">
+                  {a.uniqueIdentifier ?? "—"}
+                </td>
                 <td className="max-w-xs truncate px-3 py-2">{a.description}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{a.category?.code}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{a.category?.name}</td>
                 <td className="px-3 py-2">{a.acquisitionCurrency}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
                   {formatClpInteger(a.historicalValueClp)}
@@ -576,7 +534,7 @@ export function AssetsPage() {
                     ? (a.remainingUsefulLifeMonths ?? "—")
                     : "—"}
                 </td>
-                <td className="px-3 py-2">{a.status}</td>
+                <td className="px-3 py-2">{STATUS_LABELS[a.status] ?? a.status}</td>
                 <td className="px-3 py-2">
                   <button
                     type="button"
@@ -749,44 +707,30 @@ export function AssetsPage() {
                     <select
                       className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                       value={editForm.categoryId}
-                      onChange={(e) => {
-                        const id = e.target.value;
-                        const cat = categories.find((c) => c.id === id);
-                        setEditForm((f) => {
-                          if (!f) return f;
-                          if (!cat) return { ...f, categoryId: id };
-                          const opts = usefulLifeSelectOptions(cat);
-                          const nextLife = opts.some((o) => o.value === f.usefulLifeMonths)
-                            ? f.usefulLifeMonths
-                            : String(cat.normalLifeMonths);
-                          return { ...f, categoryId: id, usefulLifeMonths: nextLife };
-                        });
-                      }}
+                      onChange={(e) =>
+                        setEditForm((f) => (f ? { ...f, categoryId: e.target.value } : f))
+                      }
                     >
                       {categories.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.code} — {c.name}
+                          {c.name}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label className="text-xs font-medium text-slate-600">
-                    Vida útil (meses)
-                    <select
+                    Vida útil inicial (meses)
+                    <input
+                      type="number"
                       required
+                      min={1}
+                      max={600}
                       className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                       value={editForm.usefulLifeMonths}
                       onChange={(e) =>
                         setEditForm((f) => (f ? { ...f, usefulLifeMonths: e.target.value } : f))
                       }
-                      disabled={!editUsefulLifeOptions.length}
-                    >
-                      {editUsefulLifeOptions.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </label>
                   <label className="text-xs font-medium text-slate-600">
                     Estado
@@ -795,10 +739,9 @@ export function AssetsPage() {
                       value={editForm.status}
                       onChange={(e) => setEditForm((f) => (f ? { ...f, status: e.target.value } : f))}
                     >
-                      <option value="ACTIVE">ACTIVE</option>
-                      <option value="DISPOSED">DISPOSED</option>
-                      <option value="TRANSFERRED">TRANSFERRED</option>
-                      <option value="UNDER_REVIEW">UNDER_REVIEW</option>
+                      <option value="ACTIVE">Activo</option>
+                      <option value="DISPOSED">Dado de baja</option>
+                      <option value="SOLD">Vendido</option>
                     </select>
                   </label>
                   <label className="text-xs font-medium text-slate-600">
@@ -811,9 +754,10 @@ export function AssetsPage() {
                       }
                     >
                       <option value="CLP">CLP</option>
+                      <option value="PEN">PEN</option>
                       <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="OTHER">OTHER</option>
+                      <option value="COP">COP</option>
+                      <option value="ARS">ARS</option>
                     </select>
                   </label>
                   <label className="text-xs font-medium text-slate-600">
@@ -842,6 +786,15 @@ export function AssetsPage() {
                       className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                       value={editForm.invoiceNumber}
                       onChange={(e) => setEditForm((f) => (f ? { ...f, invoiceNumber: e.target.value } : f))}
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Identificador único
+                    <input
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={editForm.uniqueIdentifier}
+                      onChange={(e) => setEditForm((f) => (f ? { ...f, uniqueIdentifier: e.target.value } : f))}
+                      placeholder="Alfanumérico, ej: ACT001"
                     />
                   </label>
                   <label className="text-xs font-medium text-slate-600">

@@ -15,16 +15,16 @@ enum EconomicIndexType {
 
 enum AssetCurrency {
   CLP
+  PEN
   USD
-  EUR
-  OTHER
+  COP
+  ARS
 }
 
 enum AssetStatus {
   ACTIVE
   DISPOSED
-  TRANSFERRED
-  UNDER_REVIEW
+  SOLD
 }
 
 enum PeriodStatus {
@@ -99,6 +99,7 @@ model Asset {
   status                  AssetStatus        @default(ACTIVE)
   disposedAt              DateTime?          @db.Date
   disposalReason          String?
+  uniqueIdentifier        String?            @unique
   odooAssetRef            String?
   odooMoveRef             String?
   createdById             String?
