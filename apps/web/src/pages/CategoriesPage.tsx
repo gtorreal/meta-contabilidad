@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 
 type Row = {
@@ -9,6 +9,75 @@ type Row = {
   normalLifeMonths: number;
   acceleratedLifeMonths: number;
 };
+
+function EditableName({ row }: { row: Row }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(row.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  const update = useMutation({
+    mutationFn: (name: string) =>
+      api<Row>(`/api/categories/${row.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      setEditing(false);
+    },
+    onError: () => {
+      setValue(row.name);
+      setEditing(false);
+    },
+  });
+
+  function commit() {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setValue(row.name);
+      setEditing(false);
+      return;
+    }
+    if (trimmed === row.name) {
+      setEditing(false);
+      return;
+    }
+    update.mutate(trimmed);
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="w-full rounded border border-slate-400 px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { setValue(row.name); setEditing(false); }
+        }}
+        disabled={update.isPending}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="w-full text-left hover:underline decoration-slate-400 focus:outline-none focus:underline"
+      title="Haz clic para editar el nombre"
+      onClick={() => { setValue(row.name); setEditing(true); }}
+    >
+      {row.name}
+    </button>
+  );
+}
 
 export function CategoriesPage() {
   const qc = useQueryClient();
@@ -122,7 +191,9 @@ export function CategoriesPage() {
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
-                <td className="px-3 py-2">{r.name}</td>
+                <td className="px-3 py-2">
+                  <EditableName row={r} />
+                </td>
                 <td className="px-3 py-2 text-right">{r.normalLifeMonths}</td>
                 <td className="px-3 py-2 text-right">{r.acceleratedLifeMonths}</td>
               </tr>

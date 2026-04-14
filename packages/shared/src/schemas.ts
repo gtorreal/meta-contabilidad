@@ -29,6 +29,12 @@ export const usefulLifeCategoryCreateSchema = z.object({
   acceleratedLifeMonths: z.number().int().positive(),
 });
 
+export const usefulLifeCategoryUpdateSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  normalLifeMonths: z.number().int().positive().optional(),
+  acceleratedLifeMonths: z.number().int().positive().optional(),
+});
+
 export const assetCreateSchema = z.object({
   acquisitionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   invoiceNumber: z.string().max(128).optional().nullable(),
