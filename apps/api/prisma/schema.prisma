@@ -161,3 +161,19 @@ model Attachment {
   storagePath String
   createdAt   DateTime @default(now())
 }
+
+model LeaseSchedule {
+  id                   String   @id @default(uuid())
+  title                String
+  recognitionDate      DateTime @db.Date
+  firstPaymentDay      Int
+  numberOfPeriods      Int
+  monthlyInstallmentUF Decimal  @db.Decimal(24, 4)
+  annualInterestRate   Decimal  @db.Decimal(10, 6)
+  ufAtRecognition      Decimal  @db.Decimal(24, 4)
+  usefulLifeMonths     Int
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([recognitionDate])
+}

@@ -7,6 +7,7 @@ import { cors } from "hono/cors";
 import { assetsRoute } from "./routes/assets.js";
 import { categoriesRoute } from "./routes/categories.js";
 import { indicesRoute } from "./routes/indices.js";
+import { leaseSchedulesRoute } from "./routes/leaseSchedules.js";
 import { periodsRoute } from "./routes/periods.js";
 import { reportsRoute } from "./routes/reports.js";
 import { prisma } from "./db.js";
@@ -59,6 +60,7 @@ app.get("/health/db", async (c) => {
 app.route("/api/categories", categoriesRoute);
 app.route("/api/assets", assetsRoute);
 app.route("/api/indices", indicesRoute);
+app.route("/api/lease-schedules", leaseSchedulesRoute);
 app.route("/api/periods", periodsRoute);
 app.route("/api/reports", reportsRoute);
 

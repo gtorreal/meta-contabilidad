@@ -107,3 +107,15 @@ export const fixedAssetMovementReportSchema = z.object({
 });
 
 export type FixedAssetMovementReportDto = z.infer<typeof fixedAssetMovementReportSchema>;
+
+export const leaseScheduleCreateSchema = z.object({
+  recognitionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato YYYY-MM-DD requerido"),
+  firstPaymentDay: z.number().int().min(1).max(28),
+  numberOfPeriods: z.number().int().min(1).max(120),
+  monthlyInstallmentUF: z.string().regex(/^\d+(\.\d{1,4})?$/, "UF inválida"),
+  annualInterestRate: z.string().regex(/^\d+(\.\d+)?$/, "Tasa inválida"),
+  ufAtRecognition: z.string().regex(/^\d+(\.\d{1,4})?$/, "Valor UF inválido"),
+  usefulLifeMonths: z.number().int().min(1).max(600),
+});
+
+export type LeaseScheduleCreateDto = z.infer<typeof leaseScheduleCreateSchema>;
