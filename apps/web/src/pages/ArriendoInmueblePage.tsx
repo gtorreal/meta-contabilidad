@@ -26,8 +26,8 @@ type ScheduleRow = {
   interestUF: number;
   amortizationUF: number;
   closingBalanceUF: number;
-  installmentCLP: number | null;
-  interestCLP: number | null;
+  installmentCLP: number;
+  interestCLP: number;
   monthlyDeprecCLP: number;
   accumDeprecCLP: number;
   netValueCLP: number;
@@ -72,9 +72,7 @@ function fmtUF(n: number): string {
 function fmtCLP(n: number): string {
   return formatClpInteger(String(Math.round(n)));
 }
-function fmtCLPOrNull(n: number | null): string {
-  return n === null ? "S/D" : fmtCLP(n);
-}
+
 function periodLabel(iso: string): string {
   const [y, m] = iso.split("-");
   return `${MONTH_LABELS[parseInt(m, 10) - 1]} ${y}`;
@@ -132,6 +130,20 @@ function ScheduleTable({ scheduleId }: { scheduleId: string }) {
     queryFn: () => api<ScheduleDetail>(`/api/lease-schedules/${scheduleId}/rows`),
   });
 
+  const storageKey = `lease-banco-${scheduleId}`;
+  const [bancoInput, setBancoInput] = useState(() => localStorage.getItem(storageKey) ?? "");
+  const [bancoEditing, setBancoEditing] = useState(false);
+  const bancoRef = useRef<HTMLInputElement>(null);
+
+  function saveBanco(value: string) {
+    setBancoInput(value);
+    if (value === "") {
+      localStorage.removeItem(storageKey);
+    } else {
+      localStorage.setItem(storageKey, value);
+    }
+  }
+
   if (isPending) {
     return <p className="px-4 py-6 text-sm text-slate-500">Calculando tabla…</p>;
   }
@@ -146,12 +158,19 @@ function ScheduleTable({ scheduleId }: { scheduleId: string }) {
   const { summary, rows } = data;
   const today = new Date();
 
+  const bancoValue = bancoInput === "" ? null : Number(bancoInput.replace(/\./g, "").replace(",", "."));
+  const pasivo = rows[0] ? rows[0].installmentCLP + rows[0].interestCLP : 0;
+  const diferencia = bancoValue !== null ? bancoValue - pasivo : null;
+
+  function handleBancoKeyDown(e: { key: string }) {
+    if (e.key === "Enter" || e.key === "Escape") setBancoEditing(false);
+  }
+
   const totalInstallUF = rows.reduce((s, r) => s + r.installmentUF, 0);
   const totalInterestUF = rows.reduce((s, r) => s + r.interestUF, 0);
   const totalAmortUF = rows.reduce((s, r) => s + r.amortizationUF, 0);
-  const totalInstallCLP = rows.reduce((s, r) => s + (r.installmentCLP ?? 0), 0);
-  const totalInterestCLP = rows.reduce((s, r) => s + (r.interestCLP ?? 0), 0);
-  const anyMissingCLP = rows.some((r) => r.installmentCLP === null);
+  const totalInstallCLP = rows.reduce((s, r) => s + r.installmentCLP, 0);
+  const totalInterestCLP = rows.reduce((s, r) => s + r.interestCLP, 0);
 
   return (
     <div className="space-y-4 px-4 pb-4 pt-3">
@@ -192,10 +211,107 @@ function ScheduleTable({ scheduleId }: { scheduleId: string }) {
         </div>
       </div>
 
-      {anyMissingCLP && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-          "S/D" indica que el precio UF para esa fecha no está en la tabla de índices. Sincroniza los índices para verlo en CLP.
-        </p>
+      {/* Pago mensual banco */}
+      {rows[0] && (
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold text-slate-700">
+            Pago mensual banco — {fmtDateShort(rows[0].paymentDate)}
+          </p>
+          <table className="mt-2 min-w-full text-left text-xs">
+            <thead className="text-slate-500">
+              <tr>
+                <th className="pr-4 font-medium">Descripción</th>
+                <th className="pr-4 text-right font-medium">Débito</th>
+                <th className="text-right font-medium">Crédito</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="pr-4 py-0.5">210181 · Pasivo por derecho de uso</td>
+                <td className="pr-4 text-right tabular-nums">{fmtCLP(rows[0].installmentCLP + rows[0].interestCLP)}</td>
+                <td className="text-right text-slate-400">—</td>
+              </tr>
+              <tr>
+                <td className="pr-4 py-0.5">110102 · Banco</td>
+                <td className="pr-4 text-right text-slate-400">—</td>
+                <td className="text-right">
+                  {bancoEditing ? (
+                    <input
+                      ref={bancoRef}
+                      type="text"
+                      inputMode="numeric"
+                      className="w-32 rounded border border-blue-400 px-1 py-0 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      value={bancoInput}
+                      onChange={(e) => saveBanco(e.target.value)}
+                      onBlur={() => setBancoEditing(false)}
+                      onKeyDown={handleBancoKeyDown}
+                      autoFocus
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setBancoEditing(true); setTimeout(() => bancoRef.current?.select(), 0); }}
+                      className={bancoValue !== null ? "tabular-nums" : "italic text-slate-400 hover:text-blue-600 hover:underline"}
+                    >
+                      {bancoValue !== null ? fmtCLP(bancoValue) : "ingreso manual"}
+                    </button>
+                  )}
+                </td>
+              </tr>
+              <tr>
+                <td className="pr-4 py-0.5">410140 · Gastos por arriendo</td>
+                <td className="pr-4 text-right">
+                  {diferencia !== null ? (
+                    <span className="tabular-nums">{fmtCLP(diferencia)}</span>
+                  ) : (
+                    <span className="italic text-slate-400">diferencia</span>
+                  )}
+                </td>
+                <td className="text-right text-slate-400">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Registro contable rebaja tabla amortización */}
+      {rows[0] && (
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold text-slate-700">
+            Registro contable rebaja tabla amortización — {fmtDateShort(rows[0].paymentDate)}
+          </p>
+          <table className="mt-2 min-w-full text-left text-xs">
+            <thead className="text-slate-500">
+              <tr>
+                <th className="pr-4 font-medium">Descripción</th>
+                <th className="pr-4 text-right font-medium">Débito</th>
+                <th className="text-right font-medium">Crédito</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="pr-4 py-0.5">410140 · Gastos por arriendo (amortización)</td>
+                <td className="pr-4 text-right tabular-nums">{fmtCLP(rows[0].installmentCLP)}</td>
+                <td className="text-right text-slate-400">—</td>
+              </tr>
+              <tr>
+                <td className="pr-4 py-0.5">410140 · Gastos por arriendo (interés)</td>
+                <td className="pr-4 text-right tabular-nums">{fmtCLP(rows[0].interestCLP)}</td>
+                <td className="text-right text-slate-400">—</td>
+              </tr>
+              <tr>
+                <td className="pr-4 py-0.5">117003 · Activo por derecho de uso</td>
+                <td className="pr-4 text-right text-slate-400">—</td>
+                <td className="text-right tabular-nums">{fmtCLP(rows[0].installmentCLP)}</td>
+              </tr>
+              <tr>
+                <td className="pr-4 py-0.5">117004 · Activo por intereses diferidos</td>
+                <td className="pr-4 text-right text-slate-400">—</td>
+                <td className="text-right tabular-nums">{fmtCLP(rows[0].interestCLP)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Amortization table */}
@@ -246,8 +362,8 @@ function ScheduleTable({ scheduleId }: { scheduleId: string }) {
                   <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{fmtUF(r.interestUF)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtUF(r.amortizationUF)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmtUF(r.closingBalanceUF)}</td>
-                  <td className="border-l border-slate-100 px-3 py-1.5 text-right tabular-nums">{fmtCLPOrNull(r.installmentCLP)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{fmtCLPOrNull(r.interestCLP)}</td>
+                  <td className="border-l border-slate-100 px-3 py-1.5 text-right tabular-nums">{fmtCLP(r.installmentCLP)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{fmtCLP(r.interestCLP)}</td>
                   <td className="border-l border-slate-100 px-3 py-1.5 text-right tabular-nums">{fmtCLP(r.monthlyDeprecCLP)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{fmtCLP(r.accumDeprecCLP)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtCLP(r.netValueCLP)}</td>
@@ -265,10 +381,10 @@ function ScheduleTable({ scheduleId }: { scheduleId: string }) {
               <td className="px-3 py-2 text-right tabular-nums">{fmtUF(totalAmortUF)}</td>
               <td className="px-3 py-2" />
               <td className="border-l border-slate-200 px-3 py-2 text-right tabular-nums">
-                {anyMissingCLP ? "S/D" : fmtCLP(totalInstallCLP)}
+                {fmtCLP(totalInstallCLP)}
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
-                {anyMissingCLP ? "S/D" : fmtCLP(totalInterestCLP)}
+                {fmtCLP(totalInterestCLP)}
               </td>
               <td className="border-l border-slate-200 px-3 py-2 text-right tabular-nums">
                 {fmtCLP(rows.reduce((s, r) => s + r.monthlyDeprecCLP, 0))}
